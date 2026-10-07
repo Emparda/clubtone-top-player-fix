@@ -2,7 +2,7 @@
 // @name         Clubtone TOP Player Fix
 // @author       Dmitriy Oshev
 // @namespace    clubtone-player-fix
-// @version      1.5.18
+// @version      1.5.21
 // @homepageURL  https://github.com/Emparda/clubtone-top-player-fix
 // @supportURL   https://github.com/Emparda/clubtone-top-player-fix/issues
 // @updateURL    https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix.meta.js
@@ -18,13 +18,13 @@
 // @connect      clubtone.net
 // @connect      soundfiles.eu
 // @connect      storage.soundfiles.eu
-// @run-at       document-idle
+// @run-at       document-start
 // ==/UserScript==
 
 (function () {
     'use strict';
 
-    const VERSION = '1.5.18';
+    const VERSION = '1.5.21';
 
     const ROW_SELECTOR = '.t100';
     const PLAY_SELECTOR = '.pt-link';
@@ -72,6 +72,7 @@
 
     let rows = [];
 
+    const SF_CACHE_LIMIT = 4096;
     const sfCache = new Map();
     const pendingSfRequests = new Map();
 
@@ -215,15 +216,23 @@
 
     function requestText(url) {
         return new Promise((resolve, reject) => {
+            const target = safeWebUrl(url, MIRROR);
+            if (!target || !/^(?:www\.)?clubtone\.(?:do\.am|net)$/i.test(target.hostname)) {
+                reject(new Error('Unexpected page URL')); return;
+            }
             GM_xmlhttpRequest({
                 method: 'GET',
                 url,
                 timeout: 15000,
 
                 onload(response) {
+                    const finalUrl = safeWebUrl(response.finalUrl || url, MIRROR);
+                    if (!finalUrl || !/^(?:www\.)?clubtone\.(?:do\.am|net)$/i.test(finalUrl.hostname)) {
+                        reject(new Error('Unexpected page redirect')); return;
+                    }
                     if (
                         response.status >= 200 &&
-                        response.status < 400
+                        response.status < 300
                     ) {
                         resolve(response.responseText);
                     } else {
@@ -284,150 +293,69 @@
         );
     }
 
-    async function repairNetPage() {
-        if (!IS_NET) {
-            return;
-        }
-
-        const localRows =
-            [...document.querySelectorAll(
-                ROW_SELECTOR
-            )];
-
-        if (!localRows.length) {
-            return;
-        }
-
-        if (
-            !localRows.some(isDeletedRow)
-        ) {
-            return;
-        }
-
-        log(
-            'На .net обнаружены повреждённые строки. ' +
-            'Загружаю данные зеркала .do.am.'
-        );
-
-        try {
-            const html =
-                await requestText(
-                    getMirrorTopUrl()
-                );
-
-            const mirrorDocument =
-                new DOMParser()
-                    .parseFromString(
-                        html,
-                        'text/html'
-                    );
-
-            const mirrorRows =
-                [...mirrorDocument
-                    .querySelectorAll(
-                        ROW_SELECTOR
-                    )];
-
-            if (!mirrorRows.length) {
-                throw new Error(
-                    'На зеркале TOP-строки не найдены'
-                );
-            }
-
-            const count =
-                Math.min(
-                    localRows.length,
-                    mirrorRows.length
-                );
-
-            let repaired = 0;
-
-            for (
-                let index = 0;
-                index < count;
-                index++
-            ) {
-                const target =
-                    localRows[index];
-
-                const source =
-                    mirrorRows[index];
-
-                if (
-                    !isDeletedRow(target)
-                ) {
-                    continue;
-                }
-
-                const targetName =
-                    target.querySelector(
-                        '.topEntryName'
-                    );
-
-                const sourceName =
-                    source.querySelector(
-                        '.topEntryName'
-                    );
-
-                if (
-                    targetName &&
-                    sourceName
-                ) {
-                    targetName.innerHTML =
-                        sourceName.innerHTML;
-
-                    repaired++;
-                }
-
-                const targetCover =
-                    target.querySelector('.tc');
-
-                const sourceCover =
-                    source.querySelector('.tc');
-
-                if (
-                    targetCover &&
-                    sourceCover
-                ) {
-                    targetCover.innerHTML =
-                        sourceCover.innerHTML;
-                }
-
-                /*
-                 * Не копируем сломанный старый
-                 * Zippyshare URL.
-                 */
-                let playButton =
-                    target.querySelector(
-                        PLAY_SELECTOR
-                    );
-
-                if (!playButton) {
-                    playButton =
-                        document.createElement('a');
-
-                    playButton.className =
-                        'pt-link';
-
-                    playButton.href = '#';
-
-                    target.prepend(
-                        playButton
-                    );
-                }
-            }
-
-            log(
-                `Восстановлено строк: ${repaired}`
-            );
-
-        } catch (error) {
-            warn(
-                'Не удалось восстановить .net:',
-                error
-            );
-        }
+    function repairTrackId(row) {
+        const linkId = trackIdFromHref(row.querySelector(ENTRY_SELECTOR)?.getAttribute('href'));
+        const rowId = row.id?.match(/^entryID(\d+)$/)?.[1];
+        // Conflicting identifiers are not safe to repair automatically.
+        if (linkId && rowId && linkId !== 'id:' + rowId) return null;
+        return linkId || (rowId ? 'id:' + rowId : null);
     }
+
+    function safeWebUrl(value, base) {
+        if (typeof value !== 'string' || !value.trim()) return null;
+        try {
+            const url = new URL(value, base);
+            if (!/^https?:$/.test(url.protocol) || url.username || url.password) return null;
+            return url;
+        } catch { return null; }
+    }
+
+    async function repairNetPage() {
+        if (!IS_NET) return;
+        const targets = [...document.querySelectorAll(ROW_SELECTOR)].filter(isDeletedRow);
+        if (!targets.length) return;
+        try {
+            const sourceDocument = new DOMParser().parseFromString(await requestText(getMirrorTopUrl()), 'text/html');
+            const sources = new Map();
+            for (const row of sourceDocument.querySelectorAll(ROW_SELECTOR)) {
+                const id = repairTrackId(row);
+                if (id && !isDeletedRow(row)) sources.set(id, row);
+            }
+            for (const target of targets) {
+                const id = repairTrackId(target);
+                const source = sources.get(id);
+                const targetName = target.querySelector('.topEntryName');
+                if (!id || !source || !targetName) continue;
+                const sourceLink = source.querySelector(ENTRY_SELECTOR);
+                const url = safeWebUrl(sourceLink?.getAttribute('href'), MIRROR);
+                if (!url || trackIdFromHref(url.href) !== id) continue;
+                const link = document.createElement('a');
+                link.className = 'entryLink';
+                link.href = new URL(url.pathname + url.search, location.origin).href;
+                link.textContent = sourceLink.textContent;
+                const genre = document.createElement('span');
+                genre.className = 't1s';
+                genre.textContent = source.querySelector('.t1s')?.textContent || '';
+                targetName.replaceChildren(link, document.createElement('br'), genre);
+                const sourceImage = source.querySelector('.tc img');
+                const coverUrl = safeWebUrl(sourceImage?.getAttribute('src'), MIRROR);
+                const targetCover = target.querySelector('.tc');
+                if (targetCover && sourceImage && coverUrl) {
+                    const image = document.createElement('img');
+                    image.src = coverUrl.href;
+                    image.width = 100;
+                    image.alt = sourceImage.getAttribute('alt') || '';
+                    targetCover.replaceChildren(image);
+                }
+                if (!target.querySelector(PLAY_SELECTOR)) {
+                    const button = document.createElement('a');
+                    button.className = 'pt-link'; button.href = '#';
+                    target.prepend(button);
+                }
+            }
+        } catch (error) { warn('Mirror repair failed:', error); }
+    }
+
 
     // =========================================================
     // TRACK ID
@@ -446,14 +374,8 @@
         const href =
             link.getAttribute('href') || '';
 
-        const match =
-            href.match(
-                /(?:^|\/)\d+-\d+-\d+-(\d+)(?:[/?#]|$)/
-            );
-
-        if (match?.[1]) {
-            return `id:${match[1]}`;
-        }
+        const id = trackIdFromHref(href);
+        if (id) return id;
 
         const title =
             (link.textContent || '')
@@ -476,71 +398,7 @@
     // SHARED PLAYED HISTORY
     // =========================================================
 
-    async function loadPlayed() {
-        let stored = [];
 
-        try {
-            stored =
-                await GM_getValue(
-                    PLAYED_GM_KEY,
-                    []
-                );
-
-            if (!Array.isArray(stored)) {
-                stored = [];
-            }
-
-        } catch {
-            stored = [];
-        }
-
-        played =
-            new Set(stored);
-
-        /*
-         * Миграция старой localStorage-истории.
-         */
-        try {
-            const raw =
-                localStorage.getItem(
-                    OLD_PLAYED_KEY
-                );
-
-            if (raw) {
-                const old =
-                    JSON.parse(raw);
-
-                if (Array.isArray(old)) {
-                    for (
-                        const oldUrl of old
-                    ) {
-                        try {
-                            const url =
-                                new URL(
-                                    oldUrl,
-                                    location.href
-                                );
-
-                            const match =
-                                url.pathname.match(
-                                    /(?:^|\/)\d+-\d+-\d+-(\d+)/
-                                );
-
-                            if (match?.[1]) {
-                                played.add(
-                                    `id:${match[1]}`
-                                );
-                            }
-
-                        } catch {}
-                    }
-                }
-            }
-
-        } catch {}
-
-        await savePlayed();
-    }
 
     // =========================================================
     // PLAYED COLOR
@@ -555,6 +413,7 @@
     let historySave = Promise.resolve();
 
     function trackIdFromHref(href) {
+        if (typeof href !== 'string' || !href.trim()) return null;
         try {
             const url = new URL(href, location.href);
             if (!/^https?:$/.test(url.protocol) ||
@@ -573,6 +432,7 @@
     }
 
     function paintHistoryLink(link, id) {
+        if (id) ensureHistoryBucket(id);
         const marked = !!id && played.has(id);
         link.classList.toggle('ct-history-played', marked);
         // Remove only an old color that this script owned.
@@ -600,7 +460,8 @@
 
     function scheduleHistory() {
         if (historyTimer !== null) return;
-        historyTimer = setTimeout(flushHistory, 40);
+        historyTimer = true;
+        queueMicrotask(flushHistory);
     }
 
     function flushHistory() {
@@ -618,24 +479,242 @@
         dirtyHistoryIds.clear();
     }
 
+    // v3: fixed buckets, read only when a page references one of their IDs.
+    // GM storage is not transactional. Live tabs reconcile grow-only sets;
+    // simultaneous termination during competing writes cannot be made atomic.
+    const HISTORY_PREFIX = 'clubtone-played-v3-';
+    const HISTORY_MIGRATED = HISTORY_PREFIX + 'migration';
+    const historyBuckets = new Map();
+    let historyRetryTimer = null;
+    let migrationPending = false;
+    let migrationRunning = false;
+    let legacySnapshot = null;
+
+    function validHistoryId(id) {
+        return typeof id === 'string' && /^(?:id:\d+|title:.+)$/.test(id);
+    }
+
+    function historyBucketKey(id) {
+        let hash = 2166136261;
+        for (let i = 0; i < id.length; i++) hash = Math.imul(hash ^ id.charCodeAt(i), 16777619);
+        return HISTORY_PREFIX + (hash & 255).toString(16).padStart(2, '0');
+    }
+
+    function acceptHistoryBucket(bucket, values) {
+        if (!Array.isArray(values)) throw new Error('Invalid history bucket: ' + bucket.key);
+        const incoming = new Set();
+        for (const id of values) {
+            if (!validHistoryId(id) || historyBucketKey(id) !== bucket.key) continue;
+            incoming.add(id);
+            bucket.values.add(id);
+            if (!played.has(id)) { played.add(id); dirtyHistoryIds.add(id); }
+        }
+        bucket.loaded = true;
+        return incoming;
+    }
+
+    function retryHistoryLater() {
+        if (historyRetryTimer !== null) return;
+        historyRetryTimer = setTimeout(() => {
+            historyRetryTimer = null;
+            for (const bucket of historyBuckets.values()) {
+                if (!bucket.loaded) readHistoryBucket(bucket);
+            }
+            void savePlayed();
+            if (migrationPending) void migrateHistory();
+        }, 15000);
+    }
+
+    function readHistoryBucket(bucket) {
+        if (bucket.loading) return bucket.loading;
+        const accept = values => {
+            const incoming = acceptHistoryBucket(bucket, values);
+            for (const id of bucket.values) if (!incoming.has(id)) bucket.pending.add(id);
+            scheduleHistory();
+            if (bucket.pending.size) queueMicrotask(() => { void savePlayed(); });
+        };
+        const fail = error => { warn('History read failed:', error); retryHistoryLater(); };
+        try {
+            const value = GM_getValue(bucket.key, []);
+            if (value && typeof value.then === 'function') {
+                bucket.loading = value.then(accept).catch(fail).finally(() => { bucket.loading = null; });
+                return bucket.loading;
+            }
+            accept(value);
+        } catch (error) { fail(error); }
+    }
+
+    function ensureHistoryBucket(id) {
+        const key = historyBucketKey(id);
+        let bucket = historyBuckets.get(key);
+        if (bucket) return bucket;
+        bucket = {key, values: new Set(), pending: new Set(), loaded: false, loading: null, saving: null};
+        historyBuckets.set(key, bucket);
+        if (typeof GM_addValueChangeListener === 'function') {
+            GM_addValueChangeListener(key, (_key, _old, value, remote) => {
+                if (!remote) return;
+                try {
+                    const incoming = acceptHistoryBucket(bucket, value);
+                    for (const known of bucket.values) if (!incoming.has(known)) bucket.pending.add(known);
+                    scheduleHistory();
+                    if (bucket.pending.size) void savePlayed();
+                } catch (error) { warn('History change failed:', error); retryHistoryLater(); }
+            });
+        }
+        readHistoryBucket(bucket);
+        return bucket;
+    }
+
     function mergePlayed(values) {
         if (!Array.isArray(values)) return;
         for (const id of values) {
-            if (typeof id !== 'string' || !/^(?:id:\d+|title:.+)$/.test(id) || played.has(id)) continue;
-            played.add(id);
-            dirtyHistoryIds.add(id);
+            if (!validHistoryId(id)) continue;
+            played.add(id); dirtyHistoryIds.add(id);
         }
     }
 
+    async function writeHistoryBucket(bucket) {
+        if (bucket.saving) return bucket.saving;
+        bucket.saving = (async () => {
+            try {
+                if (bucket.loading) await bucket.loading;
+                while (bucket.pending.size) {
+                    const stored = await GM_getValue(bucket.key, []);
+                    const incoming = acceptHistoryBucket(bucket, stored);
+                    for (const id of bucket.pending) bucket.values.add(id);
+                    const merged = [...bucket.values];
+                    if (merged.some(id => !incoming.has(id))) await GM_setValue(bucket.key, merged);
+                    // Verify before clearing dirty IDs. A competing live tab also
+                    // merges remote changes; a failed write retains the pending set.
+                    const verified = acceptHistoryBucket(bucket, await GM_getValue(bucket.key, []));
+                    for (const id of verified) bucket.pending.delete(id);
+                    for (const id of bucket.values) if (!verified.has(id)) bucket.pending.add(id);
+                    if (bucket.pending.size) { retryHistoryLater(); break; }
+                }
+                scheduleHistory();
+            } catch (error) {
+                warn('History save failed; retry scheduled:', error);
+                retryHistoryLater();
+            }
+        })();
+        try { await bucket.saving; } finally { bucket.saving = null; }
+    }
+
     function savePlayed() {
-        historySave = historySave.then(async () => {
-            const stored = await GM_getValue(PLAYED_GM_KEY, []);
-            mergePlayed(stored);
-            scheduleHistory();
-            await GM_setValue(PLAYED_GM_KEY, [...played]);
-        }).catch(error => warn('History save failed:', error));
+        const jobs = [];
+        for (const bucket of historyBuckets.values()) {
+            if (bucket.pending.size || bucket.saving) jobs.push(writeHistoryBucket(bucket));
+        }
+        historySave = Promise.all(jobs);
         return historySave;
     }
+
+    function rememberHistoryId(id) {
+        if (!validHistoryId(id)) return;
+        const bucket = ensureHistoryBucket(id);
+        const fresh = !bucket.values.has(id);
+        played.add(id); bucket.values.add(id); dirtyHistoryIds.add(id);
+        scheduleHistory();
+        if (fresh) bucket.pending.add(id);
+        if (bucket.pending.size) void savePlayed();
+    }
+
+    async function migrateHistory() {
+        if (migrationRunning || !migrationPending) return;
+        migrationRunning = true;
+        try {
+            if (!legacySnapshot) {
+                const legacy = await GM_getValue(PLAYED_GM_KEY, []);
+                if (!Array.isArray(legacy)) throw new Error('Invalid legacy history; backup left untouched');
+                legacySnapshot = legacy;
+            }
+            // Migration is resumable and additive. v2 is deliberately never overwritten.
+            const groups = new Map();
+            for (let i = 0; i < legacySnapshot.length; i++) {
+                const id = legacySnapshot[i];
+                if (validHistoryId(id)) {
+                    const key = historyBucketKey(id);
+                    if (!groups.has(key)) groups.set(key, []);
+                    groups.get(key).push(id);
+                }
+                if (i && i % 4000 === 0) await sleep(0);
+            }
+            for (const ids of groups.values()) {
+                const bucket = ensureHistoryBucket(ids[0]);
+                if (bucket.loading) await bucket.loading;
+                for (const id of ids) { bucket.values.add(id); bucket.pending.add(id); }
+                await writeHistoryBucket(bucket);
+                if (bucket.pending.size) throw new Error('Migration write not verified');
+                await sleep(0);
+            }
+            await GM_setValue(HISTORY_MIGRATED, {format: 3, buckets: 256});
+            migrationPending = false;
+            legacySnapshot = null;
+        } catch (error) {
+            warn('History migration deferred; original history retained:', error);
+            retryHistoryLater();
+        } finally { migrationRunning = false; }
+    }
+
+    function loadPlayed() {
+        function legacyLocal() {
+            try {
+                const old = JSON.parse(localStorage.getItem(OLD_PLAYED_KEY) || '[]');
+                if (Array.isArray(old)) for (const href of old) {
+                    const id = trackIdFromHref(href);
+                    if (id) rememberHistoryId(id);
+                }
+            } catch (error) { warn('Legacy local history read failed:', error); }
+        }
+        function acceptLegacy(value) {
+            if (!Array.isArray(value)) throw new Error('Invalid legacy history');
+            legacySnapshot = value;
+            mergePlayed(value); // One-time compatibility during migration, before first paint.
+            migrationPending = true;
+            setTimeout(() => void migrateHistory(), 0);
+        }
+        function acceptMarker(marker) {
+            legacyLocal();
+            if (marker?.format === 3 && marker.buckets === 256) return;
+            const value = GM_getValue(PLAYED_GM_KEY, []);
+            if (value && typeof value.then === 'function') return value.then(acceptLegacy);
+            acceptLegacy(value);
+        }
+        function fail(error) {
+            warn('History initialization failed:', error);
+            migrationPending = true;
+            retryHistoryLater();
+        }
+        try {
+            const marker = GM_getValue(HISTORY_MIGRATED, null);
+            if (marker && typeof marker.then === 'function') return marker.then(acceptMarker).catch(fail);
+            const result = acceptMarker(marker);
+            if (result && typeof result.catch === 'function') return result.catch(fail);
+        } catch (error) { fail(error); }
+    }
+
+    function bindHistoryLifecycle() {
+        // Sync changes still coming from a not-yet-reloaded older version.
+        if (typeof GM_addValueChangeListener === 'function') {
+            GM_addValueChangeListener(PLAYED_GM_KEY, (_key, _old, values, remote) => {
+                if (!remote || !Array.isArray(values)) return;
+                // Queue behind any ongoing migration rather than replace its input.
+                const importLegacy = async () => {
+                    while (migrationRunning) await sleep(50);
+                    legacySnapshot = values; migrationPending = true;
+                    mergePlayed(values); scheduleHistory();
+                    await migrateHistory();
+                };
+                void importLegacy();
+            });
+        }
+        window.addEventListener('pagehide', () => { void savePlayed(); });
+        window.addEventListener('pageshow', () => {
+            for (const bucket of historyBuckets.values()) readHistoryBucket(bucket);
+            void savePlayed();
+        });
+    }
+
 
     function applyPlayedVisual(row) {
         const link = row?.querySelector(ENTRY_SELECTOR);
@@ -643,35 +722,78 @@
     }
 
     function restorePlayedVisuals() {
-        historyRoots.add(document.documentElement);
+        historyRoots.add(document.documentElement || document);
         scheduleHistory();
     }
 
+    // Record the page URL only after the current audio has actually started.
+    // No navigation, page request, popup or extra Back entry is created.
+    const nativeHistoryMarked = new Set();
+    let nativeHistoryWindow = 0;
+    let nativeHistoryCount = 0;
+    let nativeHistoryDisabled = false;
+
+    function markNativeHistory(row) {
+        if (nativeHistoryDisabled || window.top !== window.self) return false;
+        const link = row?.querySelector(ENTRY_SELECTOR);
+        if (!link) return false;
+        let target;
+        try { target = new URL(link.getAttribute('href'), location.href); }
+        catch { return false; }
+        if (target.origin !== location.origin || !trackIdFromHref(target.href)) return false;
+        if (nativeHistoryMarked.has(target.href)) return true;
+        const now = Date.now();
+        if (now - nativeHistoryWindow >= 30000) {
+            nativeHistoryWindow = now;
+            nativeHistoryCount = 0;
+        }
+        // Bound rapid successful starts; the shared history remains the fallback.
+        // Reserve room below Chromium's History API throttling threshold.
+        if (nativeHistoryCount >= 30) return false;
+        const originalUrl = location.href;
+        const originalState = history.state;
+        try {
+            nativeHistoryCount++;
+            history.replaceState(originalState, '', target.href);
+            history.replaceState(originalState, '', originalUrl);
+            nativeHistoryMarked.add(target.href);
+            return true;
+        } catch (error) {
+            nativeHistoryDisabled = true;
+            if (location.href !== originalUrl) {
+                try { history.replaceState(originalState, '', originalUrl); }
+                catch (restoreError) { warn('Could not restore page history state:', restoreError); }
+            }
+            warn('Native visited marking unavailable; shared history remains active:', error);
+            return false;
+        }
+    }
+
     function markPlayed(row) {
+        markNativeHistory(row);
         const id = canonicalTrackId(row);
         rememberHistoryId(id);
     }
 
-    function rememberHistoryId(id) {
-        if (!id) return;
-        const fresh = !played.has(id);
-        played.add(id);
-        dirtyHistoryIds.add(id);
-        scheduleHistory();
-        if (fresh) void savePlayed();
-    }
+
 
     async function initSiteHistory() {
-        await loadPlayed();
+        const historyLoad = loadPlayed();
+        if (historyLoad) await historyLoad;
         const style = document.createElement('style');
         style.textContent = `a.ct-history-played, a.ct-history-played:link,
             a.ct-history-played:visited { color: ${PLAYED_COLOR} !important; }`;
-        document.head.appendChild(style);
+        const mountStyle = () => {
+            const parent = document.head || document.documentElement;
+            if (parent && !style.isConnected) parent.appendChild(style);
+        };
+        mountStyle();
         // Only an actual document navigation counts as a visit. Fetching track
         // HTML for Soundfiles/preload never executes this initialization.
         if (window.top === window.self) rememberHistoryId(trackIdFromHref(location.href));
         restorePlayedVisuals();
         new MutationObserver(records => {
+            mountStyle();
             for (const record of records) {
                 if (record.type === 'attributes') {
                     if (record.target.matches('a')) historyRoots.add(record.target);
@@ -683,27 +805,11 @@
                     }
                 }
             }
-            if (historyRoots.size) scheduleHistory();
-        }).observe(document.documentElement, {childList: true, subtree: true,
+            if (historyRoots.size) flushHistory();
+        }).observe(document, {childList: true, subtree: true,
             attributes: true, attributeFilter: ['href']});
-        if (typeof GM_addValueChangeListener === 'function') {
-            GM_addValueChangeListener(PLAYED_GM_KEY, (_key, _old, value, remote) => {
-                if (!remote || !Array.isArray(value)) return;
-                mergePlayed(value);
-                scheduleHistory();
-                // Reconcile simultaneous writes from two open mirrors.
-                const incoming = new Set(value);
-                if ([...played].some(id => !incoming.has(id))) void savePlayed();
-            });
-        }
-        // Refresh after a suspended tab is restored, even if an event was missed.
-        window.addEventListener('pageshow', () => {
-            Promise.resolve(GM_getValue(PLAYED_GM_KEY, [])).then(values => {
-                mergePlayed(values); scheduleHistory();
-            }).catch(error => warn('History refresh failed:', error));
-        });
+        bindHistoryLifecycle();
     }
-
 
     // =========================================================
     // TRACK HELPERS
@@ -738,6 +844,8 @@
                     href,
                     location.href
                 );
+
+            if (!trackIdFromHref(url.href) || url.username || url.password) return null;
 
             /*
              * Всегда используем do.am
@@ -1112,7 +1220,7 @@
         try {
             const stored = await GM_getValue(SFFILE_GM_KEY, {});
             if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return;
-            for (const [url, sfFile] of Object.entries(stored)) {
+            for (const [url, sfFile] of Object.entries(stored).slice(-SF_CACHE_LIMIT)) {
                 if (typeof url === 'string' && typeof sfFile === 'string' && sfFile) {
                     sfCache.set(url, sfFile);
                 }
@@ -1122,18 +1230,73 @@
         }
     }
 
+    const sfCacheDirty = new Map();
     let sfCacheSaveTimer = null;
+    let sfCacheSaving = false;
 
-    function scheduleSfCacheSave() {
+    function scheduleSfCacheSave(url, sfFile) {
+        while (sfCache.size > SF_CACHE_LIMIT) sfCache.delete(sfCache.keys().next().value);
+        sfCacheDirty.set(url, sfFile);
+        if (sfCacheSaveTimer === null) {
+            // Fixed window, not a debounce: continuous precache cannot defer forever.
+            sfCacheSaveTimer = setTimeout(flushSfCache, 5000);
+        }
+    }
+
+    function flushSfCache() {
         clearTimeout(sfCacheSaveTimer);
-        sfCacheSaveTimer = setTimeout(async () => {
-            try {
-                const object = Object.fromEntries(sfCache);
-                await GM_setValue(SFFILE_GM_KEY, object);
-            } catch (error) {
-                warn('Не удалось сохранить sffile-кэш:', error);
+        sfCacheSaveTimer = null;
+        if (sfCacheSaving || !sfCacheDirty.size) return;
+        sfCacheSaving = true;
+        const batch = new Map(sfCacheDirty);
+        function finish(ok) {
+            if (ok) for (const [url, value] of batch) {
+                if (sfCacheDirty.get(url) === value) sfCacheDirty.delete(url);
             }
-        }, 100);
+            sfCacheSaving = false;
+            if (sfCacheDirty.size && sfCacheSaveTimer === null) {
+                sfCacheSaveTimer = setTimeout(flushSfCache, ok ? 5000 : 15000);
+            }
+        }
+        function fail(error) { warn('Soundfiles cache save failed:', error); finish(false); }
+        function mergeAndWrite(stored) {
+            const object = Object.create(null);
+            if (stored && typeof stored === 'object' && !Array.isArray(stored)) {
+                for (const [url, value] of Object.entries(stored)) {
+                    if (typeof value === 'string' && value) object[url] = value;
+                }
+            }
+            let changed = false;
+            for (const [url, value] of batch) {
+                if (object[url] !== value) { object[url] = value; changed = true; }
+            }
+            const keys = Object.keys(object);
+            for (const key of keys.slice(0, Math.max(0, keys.length - SF_CACHE_LIMIT))) {
+                delete object[key]; changed = true;
+            }
+            if (!changed) return finish(true);
+            const result = GM_setValue(SFFILE_GM_KEY, object);
+            if (result && typeof result.then === 'function') return result.then(() => finish(true));
+            finish(true);
+        }
+        try {
+            const stored = GM_getValue(SFFILE_GM_KEY, {});
+            if (stored && typeof stored.then === 'function') {
+                stored.then(mergeAndWrite).catch(fail);
+            } else {
+                const result = mergeAndWrite(stored);
+                if (result && typeof result.catch === 'function') result.catch(fail);
+            }
+        } catch (error) { fail(error); }
+    }
+
+    // Flush disposable cache on ordinary page exits; unexpected browser crashes
+    // may lose at most unsaved cache entries, never the played-history store.
+    function bindSfCacheLifecycle() {
+        window.addEventListener('pagehide', flushSfCache);
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') flushSfCache();
+        });
     }
 
     function extractSfFile(html) {
@@ -1207,7 +1370,7 @@
                         pageUrl,
                         sfFile
                     );
-                    scheduleSfCacheSave();
+                    scheduleSfCacheSave(pageUrl, sfFile);
 
                     return sfFile;
 
@@ -1347,12 +1510,57 @@
     // SELECT TRACK
     // =========================================================
 
+    const streamRecoveryTimes = new Map();
+    let playbackPreparedSerial = -1;
+
+    function prepareAfterPlaying(media) {
+        if (media !== audio || media.paused || media.error || !currentSfFile) return;
+        // Actual playback, including a resume after an interrupted first play().
+        updateDownload();
+        if (playbackPreparedSerial === requestSerial) return;
+        playbackPreparedSerial = requestSerial;
+        void warmAudioAhead(currentIndex).catch(() => {});
+    }
+
+    async function recoverFailedStream(media) {
+        if (media !== audio || ![2, 3, 4].includes(media.error?.code) || !currentRow) return;
+        const pageUrl = getPageUrl(currentRow);
+        if (!pageUrl) return;
+        const now = Date.now();
+        // At most one automatic refresh per track per minute, even if the new
+        // Audio also fails. A failed remote server must not cause a retry loop.
+        if (streamRecoveryTimes.has(pageUrl) && now - streamRecoveryTimes.get(pageUrl) < 60000) return;
+        streamRecoveryTimes.set(pageUrl, now);
+        const serial = requestSerial;
+        const index = currentIndex;
+        userTrackLoading = true;
+        try {
+            // Finish the old fetch first so it cannot overwrite a fresh result.
+            const pending = pendingSfRequests.get(pageUrl);
+            if (pending) await pending.catch(() => {});
+            if (serial !== requestSerial || media !== audio) return;
+            sfCache.delete(pageUrl);
+            sfCacheDirty.delete(pageUrl);
+            for (const [key, entry] of audioWarmCache) {
+                if (entry.pageUrl === pageUrl) { releaseWarmEntry(entry); audioWarmCache.delete(key); }
+            }
+            await getSfFile(pageUrl);
+            if (serial !== requestSerial || media !== audio) return;
+            await selectTrack(index, true);
+        } catch (error) {
+            warn('Stream refresh failed; manual retry remains available:', error);
+        } finally {
+            if (serial === requestSerial) userTrackLoading = false;
+        }
+    }
+
+
     async function selectTrack(
         index,
         autoplay = true
     ) {
         if (
-            index < 0 ||
+            !Number.isInteger(index) || index < 0 ||
             index >= rows.length
         ) {
             return;
@@ -1563,19 +1771,6 @@
                 return;
             }
 
-            updateDownload();
-
-            /*
-             * Самое важное для следующего переключения:
-             * три следующих AUDIO начинают грузиться параллельно
-             * уже после старта текущего трека.
-             */
-            warmAudioAhead(
-                index
-            ).catch(
-                () => {}
-            );
-
         } catch (error) {
             if (
                 serial !==
@@ -1583,6 +1778,8 @@
             ) {
                 return;
             }
+
+            if (error?.name === 'AbortError' || (!audio.paused && !audio.error)) return;
 
             resetRowButton(button);
             playerPlay?.classList.remove('pt-playing');
@@ -2024,6 +2221,7 @@
                 }
 
                 if (media.paused || media.error) return;
+                prepareAfterPlaying(media);
                 if (currentRow) markPlayed(currentRow);
                 loadWaveformAfterPlayback();
             }
@@ -2151,6 +2349,7 @@
                 playerPlay?.classList.remove('pt-playing');
                 resetRowButton(currentButton);
                 stopProgressLoop();
+                void recoverFailedStream(media);
                 warn(
                     'HTMLAudioElement error:',
                     media.error
@@ -2430,6 +2629,14 @@
 
     async function init() {
         await initSiteHistory();
+        bindSfCacheLifecycle();
+        // History observes parser mutations from document-start; initialize the
+        // player only after its markup exists.
+        if (document.readyState === 'loading') {
+            await new Promise(resolve => document.addEventListener('DOMContentLoaded', resolve, {once: true}));
+        }
+        // Let the site's DOMContentLoaded/jQuery-ready handlers complete first.
+        await new Promise(resolve => setTimeout(resolve, 0));
         /*
          * Только .net с реально повреждёнными
          * строками делает запрос к зеркалу.
