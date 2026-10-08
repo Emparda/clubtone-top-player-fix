@@ -8,8 +8,6 @@
 
 [Установите Tampermonkey](https://chromewebstore.google.com/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo?hl=ru), затем [откройте скрипт](https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix.user.js) и подтвердите установку/обновление. Эта ссылка начнёт выдавать актуальную версию скрипта после публикации файлов владельцем репозитория.
 
-Обновляйте **существующий** скрипт, не удаляя его и не создавая вторую активную копию. Имя и namespace сохранены. Если ранее был установлен History Companion, он не нужен и должен оставаться отключённым. После обновления перезагрузите ранее открытые страницы Clubtone, чтобы они использовали одинаковую версию.
-
 ## Управление
 
 - **W** — страница текущего трека на используемом зеркале
