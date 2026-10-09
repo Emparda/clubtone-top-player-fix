@@ -2,7 +2,7 @@
 // @name         Clubtone TOP Player Fix
 // @author       Dmitriy Oshev
 // @namespace    clubtone-player-fix
-// @version      1.5.21
+// @version      1.5.22
 // @homepageURL  https://github.com/Emparda/clubtone-top-player-fix
 // @supportURL   https://github.com/Emparda/clubtone-top-player-fix/issues
 // @updateURL    https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix.meta.js
@@ -24,7 +24,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '1.5.21';
+    const VERSION = '1.5.22';
 
     const ROW_SELECTOR = '.t100';
     const PLAY_SELECTOR = '.pt-link';
@@ -1037,6 +1037,11 @@
 
     function setWaveHref(url) {
         if (!wave) {
+            return;
+        }
+
+        if (trackPageRow) {
+            wave.style.backgroundImage = url ? `url("${url}")` : 'none';
             return;
         }
 
@@ -2245,6 +2250,7 @@
                     'playing'
                 );
 
+                pauseTrackPageEmbed();
                 startProgressLoop();
             }
         );
@@ -2335,6 +2341,10 @@
 
                 stopProgressLoop();
                 setProgress(100);
+                if (trackPageRow) {
+                    playerPlay?.classList.remove('pt-playing');
+                    return;
+                }
                 nextTrack();
             }
         );
@@ -2545,16 +2555,19 @@
                 ) {
                     case 'KeyA':
                         event.preventDefault();
+                        if (trackPageRow) event.stopImmediatePropagation();
                         previousTrack();
                         break;
 
                     case 'KeyS':
                         event.preventDefault();
+                        if (trackPageRow) event.stopImmediatePropagation();
                         togglePlayback();
                         break;
 
                     case 'KeyD':
                         event.preventDefault();
+                        if (trackPageRow) event.stopImmediatePropagation();
                         nextTrack();
                         break;
 
@@ -2627,6 +2640,88 @@
     // INIT
     // =========================================================
 
+    // A detached row lets the single-track page reuse the tested TOP engine.
+    // It is never inserted into the list or included in the history observer.
+    let trackPageRow = null;
+    let trackPageSfFile = null;
+
+    function createTrackPageRow() {
+        if (!trackIdFromHref(location.href) || !document.querySelector('#pageplayer')) return null;
+        const script = [...document.querySelectorAll('script:not([src])')]
+            .find(node => /\b(?:var\s+)?sffile\s*=\s*["']/.test(node.textContent));
+        const sfFile = script && extractSfFile(script.textContent);
+        if (!sfFile || !/^[A-Za-z0-9_-]+$/.test(sfFile)) return null;
+        const row = document.createElement('div');
+        const link = document.createElement('a');
+        link.className = 'entryLink';
+        link.href = location.origin + location.pathname;
+        link.textContent = document.querySelector('#name456, h1')?.textContent.trim() || document.title;
+        row.append(link);
+        trackPageSfFile = sfFile;
+        return row;
+    }
+
+    function initTrackPageControls() {
+        // Stop the obsolete Zippyshare element. Capture prevents the site's
+        // old mousedown/mouseup handlers from starting it while seeking.
+        const legacy = document.querySelector('audio#player');
+        if (legacy) {
+            legacy.pause();
+            legacy.removeAttribute('src');
+            legacy.querySelectorAll('source').forEach(source => source.removeAttribute('src'));
+            legacy.load();
+        }
+        for (const type of ['mousedown', 'mouseup']) {
+            player.addEventListener(type, event => {
+                if (event.target.closest('.pt-scrubber, #volume')) {
+                    event.stopImmediatePropagation();
+                    event.stopPropagation();
+                }
+            }, true);
+        }
+        document.addEventListener('play', event => {
+            if (event.target === legacy) legacy.pause();
+            else if (event.target.matches?.('.sf-player-container audio') && audio && !audio.paused) audio.pause();
+        }, true);
+        const box = player.querySelector('#download');
+        if (box && !box.querySelector('a')) {
+            const link = document.createElement('a');
+            link.textContent = 'Скачать';
+            link.href = getDownloadUrl(trackPageSfFile);
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+            box.append(link);
+        }
+        // nplayer normally supplies the slider markup via jQuery UI.
+        const slider = player.querySelector('#volume');
+        if (slider && !slider.querySelector('.ui-slider-range')) {
+            const range = document.createElement('div');
+            range.className = 'ui-slider-range ui-slider-range-min';
+            slider.append(range);
+        }
+        if (slider && !slider.querySelector('.ui-slider-handle')) {
+            const handle = document.createElement('span');
+            handle.className = 'ui-slider-handle';
+            slider.append(handle);
+        }
+        player.dataset.ctTrackPage = '1';
+    }
+
+    function pauseTrackPageEmbed() {
+        if (!trackPageRow) return;
+        document.querySelectorAll('.sf-player-container audio').forEach(media => {
+            if (!media.paused) {
+                media.pause();
+                const icon = media.closest('.sf-player-container')?.querySelector('.play-icon');
+                if (icon) {
+                    icon.classList.remove('css-pause');
+                    icon.classList.add('css-play');
+                }
+            }
+        });
+    }
+
+
     async function init() {
         await initSiteHistory();
         bindSfCacheLifecycle();
@@ -2655,7 +2750,9 @@
                 );
 
         if (!rows.length) {
-            return;
+            trackPageRow = createTrackPageRow();
+            if (!trackPageRow) return;
+            rows = [trackPageRow];
         }
 
         player =
@@ -2666,6 +2763,7 @@
         if (!player) {
             return;
         }
+        if (trackPageRow) initTrackPageControls();
 
         /*
          * Активная обложка выглядит как штатное состояние hover,
@@ -2761,7 +2859,7 @@
 
         wave =
             player.querySelector(
-                '#wave'
+                trackPageRow ? '#wf' : '#wave'
             );
 
         /* Soundfiles PNG: waveform is opaque, background is transparent.
@@ -2809,6 +2907,11 @@
          * Уже известные треки запускаются без запроса страницы трека.
          */
         await loadSfCache();
+        if (trackPageRow) {
+            // The current HTML is fresher than persisted metadata; no refetch.
+            const pageUrl = getPageUrl(trackPageRow);
+            sfCache.set(pageUrl, trackPageSfFile);
+        }
 
         /*
          * История сначала загружается,
@@ -2846,6 +2949,13 @@
 
         initVolume();
         bindEvents();
+        if (trackPageRow) {
+            currentRow = trackPageRow;
+            currentIndex = 0;
+            currentSfFile = trackPageSfFile;
+            updateDownload();
+            setWaveHref('');
+        }
 
         /*
          * Precache намеренно запускается
