@@ -20,5 +20,6 @@ Dmitriy Oshev. Нельзя выдавать скрипт за собствен�
 6. Эта лицензия применяется к версии 1.5.24 и последующим версиям,
 содержащим её. Она не отменяет ранее выданные права на старые версии.
 
-Для запроса разрешения: https://github.com/Emparda/clubtone-top-player-fix/issues
-или darsreza@gmail.com
+Для запроса разрешения: 
+https://github.com/Emparda/clubtone-top-player-fix/issues
+darsreza@gmail.com
