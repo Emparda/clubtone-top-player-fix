@@ -15,13 +15,15 @@
 
 Если этого переключателя нет, то следуйте [инструкции Tampermonkey](https://www.tampermonkey.net/faq.php?q=Q209)   
 → открыть меню Chrome (три точки в правом верхнем углу) → «Расширения»   
-→ «Управление расширениями» (или ввести `chrome://extensions/` в адресной строке) и включить **«Режим разработчика»** в правом верхнем углу
+→ «Управление расширениями» (или ввести `chrome://extensions/` в адресной строке)   
+и включить **«Режим разработчика»** в правом верхнем углу
 
 ### 3. Установить скрипт
 
 **Основной способ:** 
 
-1. Открыть [Clubtone TOP Player Fix](https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix.user.js) и нажать «Установить» в Tampermonkey. При успешной установке достаточно только этого способа. Несколько включённых копий одного скрипта могут мешать друг другу
+1. Открыть [Clubtone TOP Player Fix](https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix.user.js) и нажать «Установить» в Tampermonkey
+2. При успешной установке достаточно только этого способа
 
 **Импорт файла:**
 
@@ -39,7 +41,8 @@
 
 ### 4. Открыть Clubtone
 
-Перейти на [clubtone.do.am](https://clubtone.do.am/) или [clubtone.net](https://clubtone.net/). Скрипт запускается автоматически. Сохраняются привычный вид плеера и основные способы управления
+Перейти на [clubtone.do.am](https://clubtone.do.am/) или [clubtone.net](https://clubtone.net/). Скрипт запускается автоматически   
+Сохраняются привычный вид плеера и основные способы управления
 
 ## Если скрипт не работает
 
@@ -82,7 +85,9 @@
 
 ## Обновление
 
-При включённой проверке обновлений Tampermonkey периодически проверяет новые версии. Проверка не обязательно происходит сразу после публикации. **Установить обновление** можно по [ссылке](https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix.user.js) или вручную в настройках скрипта → Настройки → Обновления → Проверить обновления скриптов
+При включённой проверке обновлений Tampermonkey периодически проверяет новые версии   
+Проверка не обязательно происходит сразу после публикации. **Установить обновление** можно по [ссылке](https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix.user.js)   
+Или вручную в настройках скрипта → Настройки → Обновления → Проверить обновления скриптов
 
 ## Лицензия
 
