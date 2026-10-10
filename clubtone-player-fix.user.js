@@ -2,7 +2,7 @@
 // @name         Clubtone TOP Player Fix
 // @author       Dmitriy Oshev
 // @namespace    clubtone-player-fix
-// @version      1.5.22
+// @version      1.5.23
 // @homepageURL  https://github.com/Emparda/clubtone-top-player-fix
 // @supportURL   https://github.com/Emparda/clubtone-top-player-fix/issues
 // @updateURL    https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix.meta.js
@@ -24,7 +24,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '1.5.22';
+    const VERSION = '1.5.23';
 
     const ROW_SELECTOR = '.t100';
     const PLAY_SELECTOR = '.pt-link';
@@ -418,7 +418,10 @@
             const url = new URL(href, location.href);
             if (!/^https?:$/.test(url.protocol) ||
                 !/^(?:www\.)?clubtone\.(?:do\.am|net)$/i.test(url.hostname)) return null;
-            const match = url.pathname.match(/(?:^|\/)2-\d+-\d+-(\d+)\/?$/);
+            // Music entries can move between categories (e.g. 2 -> 6).
+            // Keep one stable material ID on both mirrors and in all music categories.
+            const match = url.pathname.match(/^\/music\/(?:[^/]+\/)*\d+-\d+-\d+-(\d+)\/?$/)
+                || url.pathname.match(/(?:^|\/)2-\d+-\d+-(\d+)\/?$/);
             return match ? `id:${match[1]}` : null;
         } catch { return null; }
     }
@@ -1109,7 +1112,8 @@
             currentSfFile;
 
         /*
-         * Даём аудио получить сетевой приоритет.
+         * Звук уже запущен. Передаём загрузку waveform в ближайшую задачу,
+         * без дополнительной паузы; serial защищает от устаревшей картинки.
          */
         if (displayedWaveFile === sfFile) return;
         clearTimeout(waveformTimer);
@@ -1126,7 +1130,7 @@
                 getWaveUrl(sfFile)
             );
 
-        }, 250);
+        }, 0);
     }
 
     // =========================================================
@@ -1528,6 +1532,8 @@
     }
 
     async function recoverFailedStream(media) {
+        // A failed background preload must never start playback by itself.
+        if (trackPageRow && !trackPagePlayRequested) return;
         if (media !== audio || ![2, 3, 4].includes(media.error?.code) || !currentRow) return;
         const pageUrl = getPageUrl(currentRow);
         if (!pageUrl) return;
@@ -1570,6 +1576,8 @@
         ) {
             return;
         }
+
+        if (trackPageRow && autoplay) trackPagePlayRequested = true;
 
         // Repeated clicks during page resolution must not replay old audio.
         if (currentIndex === index && userTrackLoading && !currentSfFile) return;
@@ -2644,6 +2652,7 @@
     // It is never inserted into the list or included in the history observer.
     let trackPageRow = null;
     let trackPageSfFile = null;
+    let trackPagePlayRequested = false;
 
     function createTrackPageRow() {
         if (!trackIdFromHref(location.href) || !document.querySelector('#pageplayer')) return null;
@@ -2722,7 +2731,118 @@
     }
 
 
+    function initListCoverGuard() {
+        if (!location.pathname.startsWith('/music/')) return;
+        const originals = new WeakMap();
+        function cardFor(node) {
+            const card = node?.closest?.('#tracks [id^="entryID"]');
+            const id = card?.id.match(/^entryID(\d+)$/)?.[1];
+            const link = card?.querySelector('.tn .entryLink');
+            return id && trackIdFromHref(link?.getAttribute('href')) === 'id:' + id ? card : null;
+        }
+        function inspect(card) {
+            const image = card.querySelector('.tc img');
+            const row = card.querySelector('li');
+            if (!image || !row) return;
+            const url = safeWebUrl(image.getAttribute('src'), location.href);
+            if (url && url.pathname !== '/dsgn/dl.png') {
+                if (!originals.has(image)) originals.set(image, url.href);
+                return;
+            }
+            // Repair only the specific pair of mutations made by the legacy
+            // waveform error handler, not arbitrary dimmed or deleted rows.
+            if (url?.pathname !== '/dsgn/dl.png' || row.style.opacity !== '0.2') return;
+            image.src = originals.get(image) || new URL('/dsgn/nc.png', location.origin).href;
+            row.style.removeProperty('opacity');
+        }
+        function scan(root) {
+            if (!root?.querySelectorAll) return;
+            const card = cardFor(root);
+            if (card) inspect(card);
+            for (const item of root.querySelectorAll('#tracks [id^="entryID"]')) {
+                if (cardFor(item)) inspect(item);
+            }
+        }
+        document.addEventListener('error', event => {
+            const image = event.target;
+            if (!image?.matches?.('img.bl')) return;
+            const url = safeWebUrl(image.getAttribute('src'), location.href);
+            if (!url || !/(^|\.)zippyshare\.com$/i.test(url.hostname) || !cardFor(image)) return;
+            // This is an obsolete waveform, not the cover or the audio stream.
+            event.stopImmediatePropagation();
+            event.stopPropagation();
+        }, true);
+        scan(document);
+        const observer = new MutationObserver(records => {
+            const cards = new Set();
+            for (const record of records) {
+                const card = cardFor(record.target);
+                if (card) cards.add(card);
+                for (const node of record.addedNodes || []) scan(node);
+            }
+            for (const card of cards) inspect(card);
+        });
+        // Observe only the list: audio progress and other page animations must
+        // not cause cover scans. Wait for the parser when run at document-start.
+        function attach() {
+            const list = document.querySelector('#tracks');
+            if (!list) return false;
+            observer.observe(list, {subtree: true, childList: true,
+                attributes: true, attributeFilter: ['src', 'style']});
+            scan(list);
+            return true;
+        }
+        if (!attach()) {
+            const parser = new MutationObserver(() => { if (attach()) parser.disconnect(); });
+            parser.observe(document, {subtree: true, childList: true});
+            document.addEventListener('DOMContentLoaded', () => parser.disconnect(), {once: true});
+        }
+    }
+
+    function repairedCommentUrl(value, base = location.href) {
+        if (typeof value !== 'string' || !value.trim()) return null;
+        const raw = value.trim();
+        let url;
+        try { url = new URL(raw, base); } catch { return null; }
+        if (!/^https?:$/.test(url.protocol) || url.username || url.password ||
+            !/^(?:www\.)?clubtone\.(?:do\.am|net)$/i.test(url.hostname)) return null;
+        let path = null;
+        // A truncated "clubtone.do.am/music/..." becomes "am/music/...".
+        // Browsers resolve that against the current track's directory.
+        if (/^(?:am\/)?music\//.test(raw)) {
+            path = '/' + raw.replace(/^am\//, '').split(/[?#]/)[0];
+        } else {
+            const marker = url.pathname.lastIndexOf('/am/music/');
+            if (marker >= 0 && url.pathname.startsWith('/music/')) {
+                path = url.pathname.slice(marker + 3);
+            }
+        }
+        if (!path || !/^\/music\/(?:[A-Za-z0-9_-]+\/)*\d+-\d+-\d+-\d+\/?$/.test(path)) return null;
+        url.pathname = path;
+        return url.href;
+    }
+
+    function initCommentLinkRepair() {
+        function repair(link) {
+            if (!link?.matches?.('.lci a[href]')) return;
+            const fixed = repairedCommentUrl(link.getAttribute('href'));
+            if (fixed) link.setAttribute('href', fixed);
+        }
+        // Also covers keyboard activation, middle-click and copying via the
+        // context menu, without cancelling normal navigation behavior.
+        for (const type of ['pointerdown', 'click', 'auxclick', 'contextmenu', 'focusin']) {
+            document.addEventListener(type, event => repair(event.target.closest?.('a[href]')), true);
+        }
+        const scan = () => document.querySelectorAll('.lci a[href]').forEach(repair);
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', scan, {once: true});
+        else scan();
+    }
+
     async function init() {
+        const repairedPage = repairedCommentUrl(location.href);
+        if (repairedPage && repairedPage !== location.href) { location.replace(repairedPage); return; }
+        initCommentLinkRepair();
+        initListCoverGuard();
         await initSiteHistory();
         bindSfCacheLifecycle();
         // History observes parser mutations from document-start; initialize the
@@ -2953,8 +3073,17 @@
             currentRow = trackPageRow;
             currentIndex = 0;
             currentSfFile = trackPageSfFile;
+            updateTrackInfo(trackPageRow);
             updateDownload();
-            setWaveHref('');
+            // Prepare this exact Audio instance before the first click. The
+            // normal selectTrack fast path reuses its buffer without a src reset.
+            audio.preload = 'auto';
+            audio.src = getStreamUrl(trackPageSfFile);
+            audio.load();
+            // On a track page the ID is already known. Show its waveform
+            // before Play; the playing handler will not schedule it again.
+            displayedWaveFile = trackPageSfFile;
+            setWaveHref(getWaveUrl(trackPageSfFile));
         }
 
         /*

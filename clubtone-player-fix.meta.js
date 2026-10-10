@@ -2,7 +2,7 @@
 // @name         Clubtone TOP Player Fix
 // @author       Dmitriy Oshev
 // @namespace    clubtone-player-fix
-// @version      1.5.22
+// @version      1.5.23
 // @homepageURL  https://github.com/Emparda/clubtone-top-player-fix
 // @supportURL   https://github.com/Emparda/clubtone-top-player-fix/issues
 // @updateURL    https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix.meta.js
