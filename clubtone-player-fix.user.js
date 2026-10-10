@@ -1,8 +1,10 @@
 // ==UserScript==
 // @name         Clubtone TOP Player Fix
 // @author       Dmitriy Oshev
+// @copyright    2026 Dmitriy Oshev
+// @license      LicenseRef-Clubtone-Personal-Use
 // @namespace    clubtone-player-fix
-// @version      1.5.23
+// @version      1.5.24
 // @homepageURL  https://github.com/Emparda/clubtone-top-player-fix
 // @supportURL   https://github.com/Emparda/clubtone-top-player-fix/issues
 // @updateURL    https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix.meta.js
@@ -21,10 +23,40 @@
 // @run-at       document-start
 // ==/UserScript==
 
+/*
+Лицензия Clubtone TOP Player Fix — личное использование
+Copyright (c) 2026 Dmitriy Oshev. Создан с помощью Codex GPT.
+
+1. Разрешено бесплатно устанавливать и использовать скрипт в личных
+некоммерческих целях, хранить резервные копии и изменять свою локальную
+копию для личного использования.
+2. Неизменённые копии разрешено передавать бесплатно при сохранении этой
+лицензии, имени автора и уведомлений об авторстве.
+3. Продажа скрипта, включение его в платные продукты и распространение
+изменённых копий требуют предварительного письменного разрешения
+Dmitriy Oshev. Нельзя выдавать скрипт за собственную разработку или
+удалять уведомления об авторстве при распространении.
+4. Разрешения по обязательным нормам закона и условиям платформы GitHub
+(включая предусмотренные ею просмотр и форк публичного репозитория)
+этой лицензией не отменяются. Права на сторонние материалы, логотипы,
+сайты, музыку и библиотеки принадлежат соответствующим правообладателям.
+5. Скрипт предоставляется «как есть», без гарантии бесперебойной работы
+сторонних сайтов. В пределах, допускаемых законом, автор не отвечает
+за убытки от использования скрипта.
+6. Эта лицензия применяется к версии 1.5.24 и последующим версиям,
+содержащим её. Она не отменяет ранее выданные права на старые версии.
+
+Для запроса разрешения: https://github.com/Emparda/clubtone-top-player-fix/issues
+*/
+
 (function () {
     'use strict';
 
-    const VERSION = '1.5.23';
+    const VERSION = '1.5.24';
+
+    // Project attribution: Dmitriy Oshev; created with Codex GPT.
+    // Earliest retained local version: 1.5.11, 2026-10-03.
+    // This is archival evidence, not a verified first-publication date.
 
     const ROW_SELECTOR = '.t100';
     const PLAY_SELECTOR = '.pt-link';
@@ -149,6 +181,7 @@
 
     async function warmAudioAhead(fromIndex) {
         if (!rows.length || fromIndex < 0 || currentIndex !== fromIndex) return;
+        if (soundfilesFailed) return;
         const serial = requestSerial;
         const keep = new Set();
         const jobs = [];
@@ -169,7 +202,7 @@
                     const sfFile = await getSfFile(pageUrl);
                     // A -> B -> A still invalidates requests from the first A.
                     if (requestSerial !== serial || currentIndex !== fromIndex ||
-                        audioWarmCache.has(index)) return;
+                        audioWarmCache.has(index) || soundfilesFailed) return;
                     const warmAudio = new Audio();
                     warmAudio.preload = 'auto';
                     warmAudio.src = getStreamUrl(sfFile);
@@ -420,7 +453,7 @@
                 !/^(?:www\.)?clubtone\.(?:do\.am|net)$/i.test(url.hostname)) return null;
             // Music entries can move between categories (e.g. 2 -> 6).
             // Keep one stable material ID on both mirrors and in all music categories.
-            const match = url.pathname.match(/^\/music\/(?:[^/]+\/)*\d+-\d+-\d+-(\d+)\/?$/)
+            const match = url.pathname.match(/^\/(?:music|load)\/(?:[^/]+\/)*\d+-\d+-\d+-(\d+)\/?$/)
                 || url.pathname.match(/(?:^|\/)2-\d+-\d+-(\d+)\/?$/);
             return match ? `id:${match[1]}` : null;
         } catch { return null; }
@@ -1519,6 +1552,44 @@
     // SELECT TRACK
     // =========================================================
 
+    let playbackNotice = null;
+    let soundfilesFailed = false;
+
+    function hidePlaybackNotice() {
+        playbackNotice?.remove();
+        playbackNotice = null;
+    }
+
+    function showPlaybackNotice() {
+        if (!player || !currentSfFile || (trackPageRow && !trackPagePlayRequested)) return;
+        hidePlaybackNotice();
+        const box = document.createElement('div');
+        box.setAttribute('role', 'status');
+        box.id = 'ct-playback-notice';
+        box.style.cssText = 'position:fixed;bottom:80px;left:16px;z-index:2147483000;max-width:min(460px,90vw);padding:14px;background:#fff;color:#222;border:1px solid #888;border-radius:6px;font:14px/1.5 sans-serif;box-shadow:0 2px 12px #0003';
+        const text = document.createElement('div');
+        text.textContent = 'Аудио недоступно. Откройте Soundfiles: если сайт требует проверку, пройдите её, затем нажмите «Повторить». Возможна также ошибка самого файла или сети.';
+        const link = document.createElement('a');
+        link.textContent = 'Открыть Soundfiles';
+        link.href = getDownloadUrl(currentSfFile);
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        const retry = document.createElement('button');
+        retry.type = 'button'; retry.textContent = 'Повторить'; retry.style.margin = '8px';
+        retry.addEventListener('click', () => {
+            const pageUrl = getPageUrl(currentRow);
+            if (pageUrl) { sfCache.delete(pageUrl); sfCacheDirty.delete(pageUrl); }
+            // Retry is a user action. No polling or automatic challenge tabs.
+            hidePlaybackNotice();
+            void selectTrack(currentIndex, true);
+        });
+        const close = document.createElement('button');
+        close.type = 'button'; close.textContent = 'Закрыть'; close.addEventListener('click', hidePlaybackNotice);
+        box.append(text, link, retry, close);
+        document.body.append(box);
+        playbackNotice = box;
+    }
+
     const streamRecoveryTimes = new Map();
     let playbackPreparedSerial = -1;
 
@@ -1535,6 +1606,9 @@
         // A failed background preload must never start playback by itself.
         if (trackPageRow && !trackPagePlayRequested) return;
         if (media !== audio || ![2, 3, 4].includes(media.error?.code) || !currentRow) return;
+        // Format/source errors include server HTML challenges. Repeating the
+        // same requests cannot solve a CAPTCHA and adds unnecessary load.
+        if ([3, 4].includes(media.error?.code)) return;
         const pageUrl = getPageUrl(currentRow);
         if (!pageUrl) return;
         const now = Date.now();
@@ -1582,6 +1656,7 @@
         // Repeated clicks during page resolution must not replay old audio.
         if (currentIndex === index && userTrackLoading && !currentSfFile) return;
 
+        hidePlaybackNotice();
         const row =
             rows[index];
 
@@ -1796,6 +1871,7 @@
 
             resetRowButton(button);
             playerPlay?.classList.remove('pt-playing');
+            showPlaybackNotice();
 
             warn(
                 'Ошибка запуска трека:',
@@ -2234,6 +2310,8 @@
                 }
 
                 if (media.paused || media.error) return;
+                soundfilesFailed = false;
+                hidePlaybackNotice();
                 prepareAfterPlaying(media);
                 if (currentRow) markPlayed(currentRow);
                 loadWaveformAfterPlayback();
@@ -2367,6 +2445,9 @@
                 playerPlay?.classList.remove('pt-playing');
                 resetRowButton(currentButton);
                 stopProgressLoop();
+                soundfilesFailed = true;
+                trimAudioWarmCache(new Set());
+                showPlaybackNotice();
                 void recoverFailedStream(media);
                 warn(
                     'HTMLAudioElement error:',
@@ -2374,6 +2455,19 @@
                 );
             }
         );
+    }
+
+    function seekTrackPage(seconds) {
+        if (!trackPageRow || !audio || audio.error || !Number.isFinite(audio.duration)) return;
+        audio.currentTime = Math.max(0, Math.min(audio.duration, audio.currentTime + seconds));
+        updateProgress();
+    }
+
+    function restartTrackPage() {
+        if (!trackPageRow || !audio) return;
+        audio.currentTime = 0;
+        if (audio.paused || audio.error || !audio.src) void selectTrack(0, true);
+        else updateProgress();
     }
 
     function bindEvents() {
@@ -2564,19 +2658,21 @@
                     case 'KeyA':
                         event.preventDefault();
                         if (trackPageRow) event.stopImmediatePropagation();
-                        previousTrack();
+                        if (trackPageRow) seekTrackPage(-5);
+                        else previousTrack();
                         break;
 
                     case 'KeyS':
                         event.preventDefault();
                         if (trackPageRow) event.stopImmediatePropagation();
-                        togglePlayback();
+                        if (!trackPageRow || !event.repeat) togglePlayback();
                         break;
 
                     case 'KeyD':
                         event.preventDefault();
                         if (trackPageRow) event.stopImmediatePropagation();
-                        nextTrack();
+                        if (trackPageRow) seekTrackPage(5);
+                        else nextTrack();
                         break;
 
                     case 'KeyW':
@@ -2586,7 +2682,10 @@
                         event.stopPropagation();
                         event.stopImmediatePropagation();
                         if (event.repeat) break;
-                        if (event.code === 'KeyW') openCurrentTrackPage();
+                        if (event.code === 'KeyW') {
+                            if (trackPageRow) restartTrackPage();
+                            else openCurrentTrackPage();
+                        }
                         else openCurrentDownload();
                         break;
                 }
@@ -2732,71 +2831,67 @@
 
 
     function initListCoverGuard() {
-        if (!location.pathname.startsWith('/music/')) return;
+        // Search results need not have entryID wrappers. Validate the actual
+        // list row and material link instead; never change TOP or comment rows.
+        if (trackIdFromHref(location.href)) return;
         const originals = new WeakMap();
         function cardFor(node) {
-            const card = node?.closest?.('#tracks [id^="entryID"]');
-            const id = card?.id.match(/^entryID(\d+)$/)?.[1];
-            const link = card?.querySelector('.tn .entryLink');
-            return id && trackIdFromHref(link?.getAttribute('href')) === 'id:' + id ? card : null;
+            const row = node?.closest?.('#tracks li, #lastnews li');
+            return row && trackIdFromHref(row.querySelector('.tn a[href]')?.getAttribute('href')) ? row : null;
         }
-        function inspect(card) {
-            const image = card.querySelector('.tc img');
-            const row = card.querySelector('li');
-            if (!image || !row) return;
+        function inspect(row) {
+            const image = row.querySelector('.tc img');
+            if (!image) return;
             const url = safeWebUrl(image.getAttribute('src'), location.href);
             if (url && url.pathname !== '/dsgn/dl.png') {
                 if (!originals.has(image)) originals.set(image, url.href);
                 return;
             }
-            // Repair only the specific pair of mutations made by the legacy
-            // waveform error handler, not arbitrary dimmed or deleted rows.
             if (url?.pathname !== '/dsgn/dl.png' || row.style.opacity !== '0.2') return;
-            image.src = originals.get(image) || new URL('/dsgn/nc.png', location.origin).href;
+            const candidate = safeWebUrl(image.getAttribute('data-src2'), location.href);
+            const cover = candidate && /^(?:www\.)?clubtone\.(?:do\.am|net)$/i.test(candidate.hostname)
+                && /^\/_ld\/\d+\/\d+\.(?:jpg|png|webp)$/i.test(candidate.pathname) ? candidate.href : null;
+            image.src = originals.get(image) || cover || new URL('/dsgn/nc.png', location.origin).href;
             row.style.removeProperty('opacity');
         }
         function scan(root) {
             if (!root?.querySelectorAll) return;
-            const card = cardFor(root);
-            if (card) inspect(card);
-            for (const item of root.querySelectorAll('#tracks [id^="entryID"]')) {
-                if (cardFor(item)) inspect(item);
-            }
+            const row = cardFor(root);
+            if (row) inspect(row);
+            for (const item of root.querySelectorAll('#tracks li, #lastnews li')) if (cardFor(item)) inspect(item);
         }
         document.addEventListener('error', event => {
             const image = event.target;
             if (!image?.matches?.('img.bl')) return;
             const url = safeWebUrl(image.getAttribute('src'), location.href);
             if (!url || !/(^|\.)zippyshare\.com$/i.test(url.hostname) || !cardFor(image)) return;
-            // This is an obsolete waveform, not the cover or the audio stream.
             event.stopImmediatePropagation();
             event.stopPropagation();
         }, true);
-        scan(document);
+        let list = null;
         const observer = new MutationObserver(records => {
-            const cards = new Set();
+            const rows = new Set();
             for (const record of records) {
-                const card = cardFor(record.target);
-                if (card) cards.add(card);
+                const row = cardFor(record.target);
+                if (row) rows.add(row);
                 for (const node of record.addedNodes || []) scan(node);
             }
-            for (const card of cards) inspect(card);
+            for (const row of rows) inspect(row);
         });
-        // Observe only the list: audio progress and other page animations must
-        // not cause cover scans. Wait for the parser when run at document-start.
-        function attach() {
-            const list = document.querySelector('#tracks');
-            if (!list) return false;
-            observer.observe(list, {subtree: true, childList: true,
-                attributes: true, attributeFilter: ['src', 'style']});
-            scan(list);
-            return true;
-        }
-        if (!attach()) {
-            const parser = new MutationObserver(() => { if (attach()) parser.disconnect(); });
-            parser.observe(document, {subtree: true, childList: true});
-            document.addEventListener('DOMContentLoaded', () => parser.disconnect(), {once: true});
-        }
+        const attach = () => {
+            const next = document.querySelector('#tracks') || document.querySelector('#lastnews');
+            if (next === list) return;
+            observer.disconnect();
+            list = next;
+            if (list) {
+                observer.observe(list, {subtree:true, childList:true, attributes:true, attributeFilter:['src','style']});
+                scan(list);
+            }
+        };
+        attach();
+        // Detect replacement of the entire list by the site's AJAX search.
+        new MutationObserver(() => { if (!list?.isConnected) attach(); })
+            .observe(document, {subtree:true, childList:true});
     }
 
     function repairedCommentUrl(value, base = location.href) {
@@ -2822,21 +2917,40 @@
         return url.href;
     }
 
-    function initCommentLinkRepair() {
-        function repair(link) {
-            if (!link?.matches?.('.lci a[href]')) return;
-            const fixed = repairedCommentUrl(link.getAttribute('href'));
-            if (fixed) link.setAttribute('href', fixed);
-        }
-        // Also covers keyboard activation, middle-click and copying via the
-        // context menu, without cancelling normal navigation behavior.
-        for (const type of ['pointerdown', 'click', 'auxclick', 'contextmenu', 'focusin']) {
-            document.addEventListener(type, event => repair(event.target.closest?.('a[href]')), true);
-        }
-        const scan = () => document.querySelectorAll('.lci a[href]').forEach(repair);
-        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', scan, {once: true});
-        else scan();
+    function sameMirrorTrackUrl(value) {
+        const fixed = repairedCommentUrl(value);
+        const url = safeWebUrl(fixed || value, location.href);
+        if (!url || url.username || url.password || !trackIdFromHref(url.href)) return null;
+        return location.origin + url.pathname + url.search + url.hash;
     }
+
+    function initCommentLinkRepair() {
+        const selector = 'a[href]';
+        function repair(link) {
+            if (!link?.matches?.(selector)) return;
+            const raw = link.getAttribute('href');
+            const fixed = sameMirrorTrackUrl(raw);
+            if (fixed && fixed !== link.href) link.setAttribute('href', fixed);
+            // The site may later copy data-g back into href.
+            if (fixed && link.hasAttribute('data-g') && link.getAttribute('data-g') !== fixed)
+                link.setAttribute('data-g', fixed);
+        }
+        for (const type of ['pointerdown','click','auxclick','contextmenu','focusin'])
+            document.addEventListener(type, event => repair(event.target?.closest?.('a[href]')), true);
+        function scan(root) {
+            if (!root?.querySelectorAll) return;
+            repair(root);
+            root.querySelectorAll(selector).forEach(repair);
+        }
+        scan(document);
+        new MutationObserver(records => {
+            for (const record of records) {
+                if (record.type === 'attributes') repair(record.target);
+                else for (const node of record.addedNodes) scan(node);
+            }
+        }).observe(document, {subtree:true, childList:true, attributes:true, attributeFilter:['href','data-g']});
+    }
+
 
     async function init() {
         const repairedPage = repairedCommentUrl(location.href);
