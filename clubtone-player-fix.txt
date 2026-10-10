@@ -26,6 +26,7 @@
 /*
 Лицензия Clubtone TOP Player Fix — личное использование
 Copyright (c) 2026 Dmitriy Oshev. Создан с помощью Codex GPT.
+Дата создания скрипта: 2 октября 2026 года.
 
 1. Разрешено бесплатно устанавливать и использовать скрипт в личных
 некоммерческих целях, хранить резервные копии и изменять свою локальную
@@ -46,7 +47,9 @@ Dmitriy Oshev. Нельзя выдавать скрипт за собствен�
 6. Эта лицензия применяется к версии 1.5.24 и последующим версиям,
 содержащим её. Она не отменяет ранее выданные права на старые версии.
 
-Для запроса разрешения: https://github.com/Emparda/clubtone-top-player-fix/issues
+Для запроса разрешения:
+https://github.com/Emparda/clubtone-top-player-fix/issues
+darsreza@gmail.com
 */
 
 (function () {
@@ -55,10 +58,10 @@ Dmitriy Oshev. Нельзя выдавать скрипт за собствен�
     const VERSION = '1.5.24';
 
     // Project attribution: Dmitriy Oshev; created with Codex GPT.
-    // Earliest retained local version: 1.5.11, 2026-10-03.
-    // This is archival evidence, not a verified first-publication date.
+    // Creation date supplied by the author: 2026-10-02.
 
     const ROW_SELECTOR = '.t100';
+    const PLAYER_ROW_SELECTOR = ':is(.t100, .ct-fix-list-row)';
     const PLAY_SELECTOR = '.pt-link';
     const ENTRY_SELECTOR = '.entryLink';
 
@@ -889,7 +892,7 @@ Dmitriy Oshev. Нельзя выдавать скрипт за собствен�
              * с sffile.
              */
             return (
-                MIRROR +
+                (row.classList.contains('ct-fix-list-row') ? location.origin : MIRROR) +
                 url.pathname +
                 url.search
             );
@@ -2538,15 +2541,21 @@ Dmitriy Oshev. Нельзя выдавать скрипт за собствен�
 
                 const row =
                     button.closest(
-                        ROW_SELECTOR
+                        PLAYER_ROW_SELECTOR
                     );
 
                 if (!row) {
                     return;
                 }
 
-                const index =
-                    rows.indexOf(row);
+                if (row.classList.contains('ct-fix-list-row')) {
+                    const nextRows = collectListRows();
+                    // Preserve the active selection across an AJAX list refresh.
+                    if (currentRow && !nextRows.includes(currentRow)) nextRows.unshift(currentRow);
+                    rows = nextRows;
+                    currentIndex = rows.indexOf(currentRow);
+                }
+                const index = rows.indexOf(row);
 
                 if (index < 0) {
                     return;
@@ -2792,7 +2801,7 @@ Dmitriy Oshev. Нельзя выдавать скрипт за собствен�
             else if (event.target.matches?.('.sf-player-container audio') && audio && !audio.paused) audio.pause();
         }, true);
         const box = player.querySelector('#download');
-        if (box && !box.querySelector('a')) {
+        if (trackPageRow && box && !box.querySelector('a')) {
             const link = document.createElement('a');
             link.textContent = 'Скачать';
             link.href = getDownloadUrl(trackPageSfFile);
@@ -2812,7 +2821,7 @@ Dmitriy Oshev. Нельзя выдавать скрипт за собствен�
             handle.className = 'ui-slider-handle';
             slider.append(handle);
         }
-        player.dataset.ctTrackPage = '1';
+        if (trackPageRow) player.dataset.ctTrackPage = '1';
     }
 
     function pauseTrackPageEmbed() {
@@ -2830,29 +2839,61 @@ Dmitriy Oshev. Нельзя выдавать скрипт за собствен�
     }
 
 
+    function collectListRows() {
+        return [...document.querySelectorAll('#tracks li, #lastnews li')].filter(row => {
+            const link = row.querySelector('.tn a[href]');
+            if (!link || !trackIdFromHref(link.href)) return false;
+            link.classList.add('entryLink');
+            row.classList.add('ct-fix-list-row');
+            return true;
+        });
+    }
+
     function initListCoverGuard() {
         // Search results need not have entryID wrappers. Validate the actual
         // list row and material link instead; never change TOP or comment rows.
         if (trackIdFromHref(location.href)) return;
         const originals = new WeakMap();
+        const attempted = new WeakMap();
+        const fallback = new URL('/dsgn/nc.png', location.origin).href;
         function cardFor(node) {
             const row = node?.closest?.('#tracks li, #lastnews li');
             return row && trackIdFromHref(row.querySelector('.tn a[href]')?.getAttribute('href')) ? row : null;
         }
         function inspect(row) {
+            const link = row.querySelector('.tn a[href]');
+            row.classList.add('ct-fix-list-row');
+            link.classList.add('entryLink');
+            // The legacy error handler may already have removed this control.
+            if (!row.querySelector('.pt-link')) {
+                const button = document.createElement('a');
+                button.className = 'pt-link';
+                button.href = link.href;
+                button.textContent = link.textContent;
+                button.title = 'Воспроизвести';
+                row.querySelector('.tc')?.after(button);
+            }
             const image = row.querySelector('.tc img');
             if (!image) return;
             const url = safeWebUrl(image.getAttribute('src'), location.href);
-            if (url && url.pathname !== '/dsgn/dl.png') {
-                if (!originals.has(image)) originals.set(image, url.href);
-                return;
-            }
-            if (url?.pathname !== '/dsgn/dl.png' || row.style.opacity !== '0.2') return;
             const candidate = safeWebUrl(image.getAttribute('data-src2'), location.href);
             const cover = candidate && /^(?:www\.)?clubtone\.(?:do\.am|net)$/i.test(candidate.hostname)
-                && /^\/_ld\/\d+\/\d+\.(?:jpg|png|webp)$/i.test(candidate.pathname) ? candidate.href : null;
-            image.src = originals.get(image) || cover || new URL('/dsgn/nc.png', location.origin).href;
-            row.style.removeProperty('opacity');
+                && /^\/_ld\/\d+\/\d+\.(?:jpg|png|webp)$/i.test(candidate.pathname)
+                ? new URL(candidate.pathname, location.origin).href : null;
+            if (url?.pathname === '/dsgn/dl.png' && row.style.opacity === '0.2') {
+                row.style.removeProperty('opacity');
+                image.src = originals.get(image) || fallback;
+            } else if (url && !/^\/dsgn\/(?:dl|nc)\.png$/.test(url.pathname)) {
+                if (attempted.get(image) !== url.href) originals.set(image, url.href);
+                return;
+            }
+            if (!cover || attempted.get(image) === cover) return;
+            attempted.set(image, cover);
+            image.loading = 'lazy';
+            image.addEventListener('error', () => {
+                if (image.src === cover) image.src = originals.get(image) || fallback;
+            }, {once:true});
+            image.src = cover;
         }
         function scan(root) {
             if (!root?.querySelectorAll) return;
@@ -2884,7 +2925,7 @@ Dmitriy Oshev. Нельзя выдавать скрипт за собствен�
             observer.disconnect();
             list = next;
             if (list) {
-                observer.observe(list, {subtree:true, childList:true, attributes:true, attributeFilter:['src','style']});
+                observer.observe(list, {subtree:true, childList:true, attributes:true, attributeFilter:['src','style','data-src2']});
                 scan(list);
             }
         };
@@ -2985,8 +3026,8 @@ Dmitriy Oshev. Нельзя выдавать скрипт за собствен�
 
         if (!rows.length) {
             trackPageRow = createTrackPageRow();
-            if (!trackPageRow) return;
-            rows = [trackPageRow];
+            rows = trackPageRow ? [trackPageRow] : collectListRows();
+            if (!rows.length) return;
         }
 
         player =
@@ -2997,7 +3038,7 @@ Dmitriy Oshev. Нельзя выдавать скрипт за собствен�
         if (!player) {
             return;
         }
-        if (trackPageRow) initTrackPageControls();
+        initTrackPageControls();
 
         /*
          * Активная обложка выглядит как штатное состояние hover,
@@ -3012,18 +3053,18 @@ Dmitriy Oshev. Нельзя выдавать скрипт за собствен�
              * Меняем только фон. При паузе/сбросе возвращается фон сайта.
              * Ни новых элементов, ни изменений геометрии строки.
              */
-            ${ROW_SELECTOR} ${PLAY_SELECTOR}.ct-fix-playing {
+            ${PLAYER_ROW_SELECTOR} ${PLAY_SELECTOR}.ct-fix-playing {
                 background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='70' height='70' viewBox='0 0 70 70'%3E%3Cpath d='M25 23h7v24h-7zM38 23h7v24h-7z' fill='white'/%3E%3C/svg%3E") !important;
                 background-position: center !important;
                 background-size: 100% 100% !important;
                 background-repeat: no-repeat !important;
                 opacity: 1 !important;
             }
-            ${ROW_SELECTOR}.ct-fix-active .tc {
+            ${PLAYER_ROW_SELECTOR}.ct-fix-active .tc {
                 opacity: 1 !important;
             }
 
-            ${ROW_SELECTOR}.ct-fix-active .tc img {
+            ${PLAYER_ROW_SELECTOR}.ct-fix-active .tc img {
                 filter: none !important;
                 -webkit-filter: none !important;
                 opacity: 1 !important;
