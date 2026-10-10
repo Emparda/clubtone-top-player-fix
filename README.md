@@ -1,42 +1,43 @@
 # Clubtone TOP Player Fix 1.5.24
 
-Восстанавливает работу штатного плеера Clubtone в поддерживаемых ТОП-списках и на страницах отдельных треков, обеспечивая воспроизведение музыки через Soundfiles
+Скрипт для браузера Chrome, который восстанавливает работу штатного плеера Clubtone, обеспечивая воспроизведение музыки через Soundfiles
 
-## Установка и обновление (Кратко)
+## Установка и обновление
 
-[Установите Tampermonkey](https://chromewebstore.google.com/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo?hl=ru), [Разрешите пользовательские скрипты](https://www.tampermonkey.net/faq.php?q=Q209), затем [откройте скрипт](https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix.user.js) и подтвердите установку/обновление
+[Установите Tampermonkey](https://chromewebstore.google.com/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo?hl=ru) и [разрешите пользовательские скрипты](https://www.tampermonkey.net/faq.php?q=Q209), затем [откройте скрипт](https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix.user.js) и подтвердите установку (обновление)
 
-## Установка и обновление (Подробно)
+## Подробная инструкция
 
-### 1. Установите Tampermonkey в Chrome
+### 1. Установите [Tampermonkey](https://chromewebstore.google.com/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo?hl=ru) в Chrome
 
-Откройте страницу расширения по ссылке выше, нажмите «Установить» и подтвердите добавление в браузер.
+Откройте страницу расширения по ссылке выше, нажмите «Установить» и подтвердите добавление в браузер
 
 ### 2. Разрешите пользовательские скрипты
 
-Нажмите правой кнопкой на значок Tampermonkey → «Управление расширением» → включите **«Разрешить пользовательские скрипты»**.
+## Включить «Разрешить пользовательские скрипты»					 				
 
-Если этого переключателя нет, откройте меню Chrome → «Расширения» → «Управление расширениями» (или введите `chrome://extensions/` в адресной строке) и включите **«Режим разработчика»** в правом верхнем углу.
+Нажмите правой кнопкой на значок Tampermonkey → «Управление расширением» → включите **«Разрешить пользовательские скрипты»**
 
-Без разрешения Chrome может блокировать запуск скрипта. В актуальном Chrome это альтернативные способы: включать оба переключателя обязательно не требуется. [Официальная инструкция Tampermonkey](https://www.tampermonkey.net/faq.php?q=Q209).
+Если этого переключателя нет, откройте меню Chrome (три точки в правом верхнем углу) → «Расширения» → «Управление расширениями» (или введите `chrome://extensions/` в адресной строке) и включите **«Режим разработчика»** в правом верхнем углу
+[Официальная инструкция Tampermonkey](https://www.tampermonkey.net/faq.php?q=Q209)
 
 ### 3. Установите скрипт
 
-**Основной способ:** [открыть Clubtone TOP Player Fix](https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix.user.js) и нажать «Установить» в Tampermonkey.
+**Основной способ:** [открыть Clubtone TOP Player Fix](https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix.user.js) и нажать «Установить» в Tampermonkey
 
 **Альтернатива — импорт файла:**
 
-1. Скачайте файл `clubtone-player-fix.user.js` из репозитория.
-2. Откройте Tampermonkey → «Панель управления» → «Утилиты» → «Импорт файлов».
-3. Выберите скачанный файл и подтвердите установку.
+1. Скачайте файл [clubtone-player-fix.user.js](https://github.com/Emparda/clubtone-top-player-fix/blob/main/clubtone-player-fix.user.js)
+2. Откройте Tampermonkey → «Панель управления» → «Утилиты» → «Импорт файлов»
+3. Выберите скачанный файл и подтвердите установку
 
 **Альтернатива — вставка кода из TXT:**
 
-1. Скачайте и откройте `clubtone-player-fix.txt`.
-2. Выделите весь текст (`Ctrl+A`) и скопируйте его (`Ctrl+C`).
-3. В Tampermonkey нажмите «Создать новый скрипт» (кнопка «+»).
-4. Полностью удалите шаблон и вставьте скопированный код (`Ctrl+V`).
-5. Сохраните скрипт (`Ctrl+S`).
+1. Скачайте и откройте [clubtone-player-fix.txt](https://github.com/Emparda/clubtone-top-player-fix/blob/main/clubtone-player-fix.txt)
+2. Выделите весь текст (`Ctrl+A`) и скопируйте его (`Ctrl+C`)
+3. В Tampermonkey нажмите «Создать новый скрипт» (кнопка «+»)
+4. Полностью удалите шаблон и вставьте скопированный код (`Ctrl+V`)
+5. Сохраните скрипт (`Ctrl+S`)
 
 Выберите один способ установки. Несколько включённых копий одного скрипта могут мешать друг другу.
 
@@ -48,7 +49,7 @@
 
 ## Если скрипт не работает
 
-После каждого шага обновляйте страницу и проверяйте воспроизведение.
+После каждого шага обновляйте страницу и проверяйте воспроизведение
 
 1. Проверьте разрешение на пользовательские скрипты в Chrome (шаг 2 установки).
 2. Обновите страницу сочетанием **Ctrl+F5**.
