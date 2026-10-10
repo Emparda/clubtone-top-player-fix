@@ -85,6 +85,6 @@
 
 [Условия распространения](LICENSE.txt)
 
-## Связь
+## Обратная связь
 
 [darsreza@gmail.com](mailto:darsreza@gmail.com)
