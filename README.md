@@ -2,7 +2,7 @@
 
 Скрипт для браузера Chrome, который восстанавливает работу штатного плеера Clubtone, обеспечивая воспроизведение музыки через Soundfiles
 
-<img width="1774" height="887" alt="Изображение ChatGPT 11 окт  2026 г , 23_53_21" src="https://github.com/user-attachments/assets/b60556f5-2e4b-46d7-bd6f-3c2fecf9656d" />
+<img width="1200" height="600" alt="Изображение ChatGPT 11 окт  2026 г , 23_53_22" src="https://github.com/user-attachments/assets/97939bc0-0085-4eac-a0ba-1f2de8766209" />
 
 ## Установка
 
