@@ -83,7 +83,7 @@
 ## Обновление
 
 - При включённой проверке обновлений Tampermonkey периодически проверяет новые версии, но проверка не обязательно происходит сразу после публикации
-- **Установить обновление**, при наличии такового, можно самому, если [нажать сюда](https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix.user.js)   
+- Если доступно обновление, его можно установить самому, [нажать сюда](https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix.user.js)   
 - Установить обновление вручную или включить проверку обновлений → Панель управления Tampermonkey → Нажать на Clubtone TOP Player Fix → Настройки → Обновления
 
 ## Лицензия
