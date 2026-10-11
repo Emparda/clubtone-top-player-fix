@@ -4,7 +4,7 @@
 // @copyright    2026 Dmitriy Oshev
 // @license      LicenseRef-Clubtone-Personal-Use
 // @namespace    clubtone-player-fix
-// @version      1.5.25
+// @version      1.5.34
 // @homepageURL  https://github.com/Emparda/clubtone-top-player-fix
 // @supportURL   https://github.com/Emparda/clubtone-top-player-fix/issues
 // @updateURL    https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix.meta.js
@@ -55,7 +55,7 @@ darsreza@gmail.com
 (function () {
     'use strict';
 
-    const VERSION = '1.5.25';
+    const VERSION = '1.5.34';
 
     // Project attribution: Dmitriy Oshev; created with Codex GPT.
     // Creation date supplied by the author: 2026-10-02.
@@ -279,6 +279,8 @@ darsreza@gmail.com
                         );
                     }
                 },
+
+                onabort() { reject(new Error('Request aborted')); },
 
                 ontimeout() {
                     reject(
@@ -755,17 +757,12 @@ darsreza@gmail.com
     }
 
 
-    function applyPlayedVisual(row) {
-        const link = row?.querySelector(ENTRY_SELECTOR);
-        if (link) indexHistoryLink(link);
-    }
-
     function restorePlayedVisuals() {
         historyRoots.add(document.documentElement || document);
         scheduleHistory();
     }
 
-    // Record the page URL only after the current audio has actually started.
+    // Record the page URL for an explicit playback attempt or actual playback.
     // No navigation, page request, popup or extra Back entry is created.
     const nativeHistoryMarked = new Set();
     let nativeHistoryWindow = 0;
@@ -821,7 +818,10 @@ darsreza@gmail.com
         if (historyLoad) await historyLoad;
         const style = document.createElement('style');
         style.textContent = `a.ct-history-played, a.ct-history-played:link,
-            a.ct-history-played:visited { color: ${PLAYED_COLOR} !important; }`;
+            a.ct-history-played:visited { color: ${PLAYED_COLOR} !important; }
+            @keyframes ct-attempt-pulse { from { opacity: .4; } to { opacity: 1; } }
+            .ct-fix-loading { animation: ct-attempt-pulse .65s ease-in-out infinite alternate; }
+            @media (prefers-reduced-motion: reduce) { .ct-fix-loading { animation: none; outline: 2px solid #888; } }`;
         const mountStyle = () => {
             const parent = document.head || document.documentElement;
             if (parent && !style.isConnected) parent.appendChild(style);
@@ -1105,8 +1105,15 @@ darsreza@gmail.com
 
     let waveformTimer = null;
     let displayedWaveFile = null;
+    let waveProbe = null;
+    let waveWatchdog = null;
+    let waveUnavailable = false;
 
     function clearWaveform() {
+        clearTimeout(waveWatchdog);
+        if (waveProbe) waveProbe.onload = waveProbe.onerror = null;
+        waveProbe = null;
+        waveUnavailable = false;
         clearTimeout(waveformTimer);
         displayedWaveFile = null;
         setWaveHref('');
@@ -1162,9 +1169,28 @@ darsreza@gmail.com
             }
 
             displayedWaveFile = sfFile;
-            setWaveHref(
-                getWaveUrl(sfFile)
-            );
+            clearTimeout(waveWatchdog);
+            if (waveProbe) waveProbe.onload = waveProbe.onerror = null;
+            const probe = new Image();
+            waveProbe = probe;
+            waveUnavailable = false;
+            const isCurrent = () => requestSerial === serial && currentSfFile === sfFile && waveProbe === probe;
+            const unavailable = () => {
+                if (!isCurrent()) return;
+                clearTimeout(waveWatchdog);
+                waveUnavailable = true;
+                if (!audio?.error && !playbackNotice) showPlaybackNotice({code:'WAVE'});
+            };
+            probe.onload = () => {
+                if (!isCurrent()) return;
+                clearTimeout(waveWatchdog);
+                waveUnavailable = false;
+                setWaveHref(getWaveUrl(sfFile));
+                if (playbackNotice?.dataset.kind === 'wave') hidePlaybackNotice();
+            };
+            probe.onerror = unavailable;
+            waveWatchdog = setTimeout(unavailable, 12000);
+            probe.src = getWaveUrl(sfFile);
 
         }, 0);
     }
@@ -1266,7 +1292,7 @@ darsreza@gmail.com
             const stored = await GM_getValue(SFFILE_GM_KEY, {});
             if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return;
             for (const [url, sfFile] of Object.entries(stored).slice(-SF_CACHE_LIMIT)) {
-                if (typeof url === 'string' && typeof sfFile === 'string' && sfFile) {
+                if (typeof url === 'string' && typeof sfFile === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(sfFile)) {
                     sfCache.set(url, sfFile);
                 }
             }
@@ -1351,7 +1377,8 @@ darsreza@gmail.com
             );
 
         if (match?.[1]) {
-            return match[1].trim();
+            const id = match[1].trim();
+            return /^[A-Za-z0-9_-]{1,128}$/.test(id) ? id : null;
         }
 
         match =
@@ -1406,9 +1433,15 @@ darsreza@gmail.com
                         );
 
                     if (!sfFile) {
-                        throw new Error(
-                            'sffile не найден'
-                        );
+                        const error = new Error('sffile не найден');
+                        const doc = new DOMParser().parseFromString(html, 'text/html');
+                        for (const node of doc.querySelectorAll('a[href], iframe[src]')) {
+                            const url = safeWebUrl(node.getAttribute('href') || node.getAttribute('src'), pageUrl);
+                            if (url && !url.username && !url.password && /(^|\.)(zippyshare\.com|krakenfiles\.com|mediafire\.com|sendspace\.com|soundcloud\.com|promodj\.com|soundfiles\.eu)$/i.test(url.hostname)) {
+                                error.sourceUrl = url.href; break;
+                            }
+                        }
+                        throw error;
                     }
 
                     sfCache.set(
@@ -1496,14 +1529,9 @@ darsreza@gmail.com
     }
 
     function updateDownload() {
-        if (!currentSfFile) {
-            return;
-        }
-
-        const url =
-            getDownloadUrl(
-                currentSfFile
-            );
+        const url = currentSfFile ? getDownloadUrl(currentSfFile)
+            : currentSourceUrl || sameMirrorTrackUrl(getEntry(currentRow)?.href);
+        if (!url) return;
 
         for (
             const element of [
@@ -1523,12 +1551,13 @@ darsreza@gmail.com
 
             element.rel =
                 'noopener noreferrer';
-            element.title = 'Открыть страницу загрузки трека (F)';
+            element.title = currentSfFile || currentSourceUrl
+                ? 'Открыть источник трека (F)' : 'Открыть страницу трека (F)';
         }
     }
 
     function openCurrentTrackPage() {
-        if (!currentRow || !currentSfFile) return;
+        if (!currentRow) return;
         const pageUrl = getPageUrl(currentRow);
         if (!pageUrl) return;
         // Open the track on the mirror the user is currently browsing.
@@ -1539,6 +1568,8 @@ darsreza@gmail.com
 
     function openCurrentDownload() {
         if (!currentSfFile) {
+            if (currentSourceUrl) window.open(currentSourceUrl, '_blank', 'noopener');
+            else openCurrentTrackPage();
             return;
         }
 
@@ -1555,31 +1586,54 @@ darsreza@gmail.com
     // SELECT TRACK
     // =========================================================
 
+    let currentSourceUrl = null;
     let playbackNotice = null;
+    let noticePositionRestore = null;
     let soundfilesFailed = false;
 
     function hidePlaybackNotice() {
         playbackNotice?.remove();
         playbackNotice = null;
+        if (noticePositionRestore) {
+            const {node, value, priority} = noticePositionRestore;
+            if (value) node.style.setProperty('position', value, priority);
+            else node.style.removeProperty('position');
+            noticePositionRestore = null;
+        }
     }
 
-    function showPlaybackNotice() {
-        if (!player || !currentSfFile || (trackPageRow && !trackPagePlayRequested)) return;
+    function showPlaybackNotice(error) {
+        if (!player || !currentRow || (trackPageRow && !trackPagePlayRequested)) return;
         hidePlaybackNotice();
         const box = document.createElement('div');
         box.setAttribute('role', 'status');
         box.id = 'ct-playback-notice';
+        box.dataset.kind = error?.code === 'WAVE' ? 'wave' : 'audio';
         box.style.cssText = 'position:fixed;bottom:80px;left:16px;z-index:2147483000;max-width:min(460px,90vw);padding:14px;background:#fff;color:#222;border:1px solid #888;border-radius:6px;font:14px/1.5 sans-serif;box-shadow:0 2px 12px #0003';
         const text = document.createElement('div');
         text.textContent = 'Аудио недоступно. Откройте Soundfiles: если сайт требует проверку, пройдите её, затем нажмите «Повторить». Возможна также ошибка самого файла или сети.';
         const link = document.createElement('a');
-        link.textContent = 'Открыть Soundfiles';
-        link.href = getDownloadUrl(currentSfFile);
+        link.textContent = currentSfFile ? 'Soundfiles' : 'Страница трека';
+        link.href = currentSfFile ? getDownloadUrl(currentSfFile) : sameMirrorTrackUrl(getEntry(currentRow)?.href);
+        if (!currentSfFile) text.textContent = /HTTP 404/.test(error?.message || '')
+            ? 'Аудио недоступно: страница трека вернула ошибку 404.'
+            : /sffile/.test(error?.message || '')
+                ? 'Аудио недоступно: на странице нет поддерживаемой ссылки Soundfiles. Проверьте источник трека.'
+                : 'Аудио недоступно: не удалось загрузить страницу трека. Проверьте соединение или повторите попытку.';
         link.target = '_blank';
         link.rel = 'noopener noreferrer';
+        if (error?.code === 'WAVE') text.textContent = 'Волна трека не загрузилась — она может быть недоступна или ещё формироваться на Soundfiles; это не мешает воспроизведению аудио';
+        text.textContent = text.textContent.replace(/\.(?=\s|$)/g, ';').replace(/;$/, '');
+        link.style.setProperty('color', '#fff', 'important');
         const retry = document.createElement('button');
         retry.type = 'button'; retry.textContent = 'Повторить'; retry.style.margin = '8px';
         retry.addEventListener('click', () => {
+            if (error?.code === 'WAVE') {
+                hidePlaybackNotice();
+                displayedWaveFile = null;
+                loadWaveformAfterPlayback();
+                return;
+            }
             const pageUrl = getPageUrl(currentRow);
             if (pageUrl) { sfCache.delete(pageUrl); sfCacheDirty.delete(pageUrl); }
             // Retry is a user action. No polling or automatic challenge tabs.
@@ -1589,7 +1643,32 @@ darsreza@gmail.com
         const close = document.createElement('button');
         close.type = 'button'; close.textContent = 'Закрыть'; close.addEventListener('click', hidePlaybackNotice);
         box.append(text, link, retry, close);
-        document.body.append(box);
+        if (error?.sourceUrl) {
+            const source = document.createElement('a');
+            source.href = error.sourceUrl; source.textContent = 'Другой источник';
+            source.target = '_blank'; source.rel = 'noopener noreferrer';
+            box.append(source);
+        }
+        if (!trackPageRow && scrubber) {
+            box.className = 'ct-inline-audio-notice';
+            box.style.cssText = 'position:absolute;inset:0;z-index:20;box-sizing:border-box;padding:5px 10px;background:#000;color:#eee;font:12px/1.3 Arial,sans-serif;display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:4px 10px;overflow:auto;text-indent:0';
+            text.style.cssText = 'flex:1 1 260px;white-space:normal';
+            for (const control of box.querySelectorAll('a,button')) control.style.cssText = 'font:inherit;color:#fff!important;background:#3a3a3a;border:1px solid #777;border-radius:3px;padding:3px 7px;text-decoration:none;cursor:pointer;white-space:nowrap';
+            if (getComputedStyle(scrubber).position === 'static') {
+                noticePositionRestore = {node:scrubber, value:scrubber.style.getPropertyValue('position'), priority:scrubber.style.getPropertyPriority('position')};
+                scrubber.style.position = 'relative';
+            }
+            for (const type of ['click','mousedown','mouseup','pointerdown']) box.addEventListener(type, event => event.stopPropagation());
+            scrubber.append(box);
+            player.style.bottom = '0px';
+        } else if (trackPageRow) {
+            // Temporary sibling: removing the notice restores the original layout.
+            box.className = 'ct-track-audio-notice';
+            box.style.cssText = 'position:relative;box-sizing:border-box;width:100%;margin:0;padding:10px 12px;background:#111;color:#eee;border:1px solid #444;font:13px/1.4 Arial,sans-serif;display:flex;align-items:center;flex-wrap:wrap;gap:8px;text-indent:0;clear:both';
+            text.style.cssText = 'flex:1 1 100%;white-space:normal';
+            for (const control of box.querySelectorAll('a,button')) control.style.cssText = 'font:inherit;color:#fff!important;background:#3a3a3a;border:1px solid #777;border-radius:3px;padding:4px 9px;margin:0;text-decoration:none;cursor:pointer;white-space:nowrap';
+            player.after(box);
+        } else document.body.append(box);
         playbackNotice = box;
     }
 
@@ -1662,6 +1741,8 @@ darsreza@gmail.com
         hidePlaybackNotice();
         const row =
             rows[index];
+        // A requested attempt belongs in history even if the source is gone.
+        if (autoplay) markPlayed(row);
 
         const button =
             getButton(row);
@@ -1804,6 +1885,8 @@ darsreza@gmail.com
 
         currentSfFile =
             null;
+        currentSourceUrl = null;
+        updateDownload();
 
         setRowState(
             button,
@@ -1872,9 +1955,12 @@ darsreza@gmail.com
 
             if (error?.name === 'AbortError' || (!audio.paused && !audio.error)) return;
 
+            currentSourceUrl = error?.sourceUrl || null;
+            updateDownload();
             resetRowButton(button);
+            if (button) button.title = 'Аудио недоступно — попытка отмечена в истории';
             playerPlay?.classList.remove('pt-playing');
-            showPlaybackNotice();
+            showPlaybackNotice(error);
 
             warn(
                 'Ошибка запуска трека:',
@@ -2294,6 +2380,34 @@ darsreza@gmail.com
     // PLAYER EVENTS
     // =========================================================
 
+    // One active player across both mirrors; pausing preserves buffers and position.
+    const ACTIVE_PLAYER_KEY = 'clubtone_active_player_v1';
+    const playerTabId = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
+    let playerFocusBound = false;
+
+    function claimPlayerFocus() {
+        try {
+            const result = GM_setValue(ACTIVE_PLAYER_KEY, {tab: playerTabId, nonce: Date.now().toString(36) + Math.random().toString(36).slice(2)});
+            Promise.resolve(result).catch(error => warn('Player focus:', error));
+        } catch (error) { warn('Player focus:', error); }
+    }
+
+    function bindPlayerFocus() {
+        if (playerFocusBound || typeof GM_addValueChangeListener !== 'function') return;
+        playerFocusBound = true;
+        GM_addValueChangeListener(ACTIVE_PLAYER_KEY, (_key, _old, value, remote) => {
+            if (!remote || !value || typeof value.tab !== 'string' || value.tab === playerTabId) return;
+            // Re-read the owner so a delayed event cannot pause a newer local start.
+            Promise.resolve().then(() => GM_getValue(ACTIVE_PLAYER_KEY, null)).then(owner => {
+                if (!owner || typeof owner.tab !== 'string' || owner.tab === playerTabId) return;
+                if (audio && !audio.paused) audio.pause();
+                document.querySelectorAll('.sf-player-container audio').forEach(media => {
+                    if (!media.paused) media.pause();
+                });
+            }).catch(error => warn('Player focus:', error));
+        });
+    }
+
     function bindAudioEvents(media) {
         if (
             !media ||
@@ -2318,6 +2432,7 @@ darsreza@gmail.com
                 prepareAfterPlaying(media);
                 if (currentRow) markPlayed(currentRow);
                 loadWaveformAfterPlayback();
+                if (waveUnavailable) showPlaybackNotice({code:'WAVE'});
             }
         );
 
@@ -2327,6 +2442,7 @@ darsreza@gmail.com
                 if (media !== audio || media.paused || media.error) {
                     return;
                 }
+                claimPlayerFocus();
 
                 playerPlay
                     ?.classList
@@ -2580,6 +2696,8 @@ darsreza@gmail.com
             scrubber.addEventListener(
                 'click',
                 event => {
+                    // Capture runs before the notification's own buttons.
+                    if (event.target.closest?.('#ct-playback-notice')) return;
                     event.preventDefault();
                     event.stopPropagation();
                     event.stopImmediatePropagation();
@@ -2767,18 +2885,19 @@ darsreza@gmail.com
         const script = [...document.querySelectorAll('script:not([src])')]
             .find(node => /\b(?:var\s+)?sffile\s*=\s*["']/.test(node.textContent));
         const sfFile = script && extractSfFile(script.textContent);
-        if (!sfFile || !/^[A-Za-z0-9_-]+$/.test(sfFile)) return null;
+        // Pages without Soundfiles still need the shared error notification.
         const row = document.createElement('div');
         const link = document.createElement('a');
         link.className = 'entryLink';
         link.href = location.origin + location.pathname;
         link.textContent = document.querySelector('#name456, h1')?.textContent.trim() || document.title;
         row.append(link);
-        trackPageSfFile = sfFile;
+        trackPageSfFile = sfFile && /^[A-Za-z0-9_-]+$/.test(sfFile) ? sfFile : null;
         return row;
     }
 
     function initTrackPageControls() {
+        bindPlayerFocus();
         // Stop the obsolete Zippyshare element. Capture prevents the site's
         // old mousedown/mouseup handlers from starting it while seeking.
         const legacy = document.querySelector('audio#player');
@@ -2790,6 +2909,7 @@ darsreza@gmail.com
         }
         for (const type of ['mousedown', 'mouseup']) {
             player.addEventListener(type, event => {
+                if (event.target.closest?.('#ct-playback-notice')) return;
                 if (event.target.closest('.pt-scrubber, #volume')) {
                     event.stopImmediatePropagation();
                     event.stopPropagation();
@@ -2798,10 +2918,13 @@ darsreza@gmail.com
         }
         document.addEventListener('play', event => {
             if (event.target === legacy) legacy.pause();
-            else if (event.target.matches?.('.sf-player-container audio') && audio && !audio.paused) audio.pause();
+            else if (event.target.matches?.('.sf-player-container audio')) {
+                if (audio && !audio.paused) audio.pause();
+                claimPlayerFocus();
+            }
         }, true);
         const box = player.querySelector('#download');
-        if (trackPageRow && box && !box.querySelector('a')) {
+        if (trackPageRow && trackPageSfFile && box && !box.querySelector('a')) {
             const link = document.createElement('a');
             link.textContent = 'Скачать';
             link.href = getDownloadUrl(trackPageSfFile);
@@ -2862,7 +2985,9 @@ darsreza@gmail.com
             return row && trackIdFromHref(row.querySelector('.tn a[href]')?.getAttribute('href')) ? row : null;
         }
         function inspect(row) {
+            if (!row.isConnected) return;
             const link = row.querySelector('.tn a[href]');
+            if (!link || !trackIdFromHref(link.getAttribute('href'))) return;
             row.classList.add('ct-fix-list-row');
             link.classList.add('entryLink');
             // The legacy error handler may already have removed this control.
@@ -2897,15 +3022,16 @@ darsreza@gmail.com
             image.decoding = 'async';
             startedCovers++;
             image.addEventListener('error', () => {
-                if (image.src === cover) image.src = originals.get(image) || fallback;
+                if (attempted.get(image) === cover && image.src === cover) image.src = originals.get(image) || fallback;
             }, {once:true});
             image.src = cover;
         }
-        function scan(root) {
-            if (!root?.querySelectorAll) return;
+        function scan(root, pending = new Set()) {
+            if (!root?.querySelectorAll) return pending;
             const row = cardFor(root);
-            if (row) inspect(row);
-            for (const item of root.querySelectorAll('#tracks li, #lastnews li')) if (cardFor(item)) inspect(item);
+            if (row) pending.add(row);
+            for (const item of root.querySelectorAll('#tracks li, #lastnews li')) if (cardFor(item)) pending.add(item);
+            return pending;
         }
         document.addEventListener('error', event => {
             const image = event.target;
@@ -2921,7 +3047,7 @@ darsreza@gmail.com
             for (const record of records) {
                 const row = cardFor(record.target);
                 if (row) rows.add(row);
-                for (const node of record.addedNodes || []) scan(node);
+                for (const node of record.addedNodes || []) scan(node, rows);
             }
             for (const row of rows) inspect(row);
         });
@@ -2933,7 +3059,7 @@ darsreza@gmail.com
             startedCovers = 0;
             if (list) {
                 observer.observe(list, {subtree:true, childList:true, attributes:true, attributeFilter:['src','style','data-src2']});
-                scan(list);
+                for (const row of scan(list)) inspect(row);
             }
         };
         attach();
@@ -2992,13 +3118,47 @@ darsreza@gmail.com
         }
         scan(document);
         new MutationObserver(records => {
+            const links = new Set();
             for (const record of records) {
-                if (record.type === 'attributes') repair(record.target);
-                else for (const node of record.addedNodes) scan(node);
+                if (record.type === 'attributes') links.add(record.target);
+                else for (const node of record.addedNodes) {
+                    if (!node.querySelectorAll || !node.isConnected) continue;
+                    if (node.matches(selector)) links.add(node);
+                    node.querySelectorAll(selector).forEach(link => links.add(link));
+                }
             }
+            for (const link of links) if (link.isConnected) repair(link);
         }).observe(document, {subtree:true, childList:true, attributes:true, attributeFilter:['href','data-g']});
     }
 
+
+    function initRatingLayout() {
+        if (!trackIdFromHref(location.href)) return;
+        const style = document.createElement('style');
+        style.textContent = `
+            /* Track-page stack: use the parent width, including all borders. */
+            #pageplayer {box-sizing:border-box!important;width:100%!important;margin-left:0!important;margin-right:0!important;}
+            #pageplayer .pt-current-track-title {display:none!important;}
+            .brief:has(script[src*="soundfiles.eu/embed/"], .sf-player-container) {box-sizing:border-box!important;width:100%!important;border:0!important;padding:0!important;margin:0!important;}
+            .brief:has(script[src*="soundfiles.eu/embed/"], .sf-player-container) > p:empty,
+            .brief > p:has(> script[src*="soundfiles.eu/embed/"]) {display:none!important;}
+            .brief .sf-player-container {box-sizing:border-box!important;width:100%!important;max-width:100%!important;margin:0!important;}
+            .brief .sf-main-body {width:100%!important;min-width:0;box-sizing:border-box;}
+            .brief .waveform-wrapper {min-width:0;}
+            #tinfo {box-sizing:border-box!important;width:100%!important;margin-left:0!important;margin-right:0!important;}
+            #tinfo {display:grid!important;grid-template-columns:minmax(0,1fr) auto;gap:0 12px;height:auto!important;}
+            #tinfo > .c {display:none!important;}
+            #tinfo > .style {grid-column:1;grid-row:1;min-width:0;}
+            #tinfo > div[style*="float"] {grid-column:2;grid-row:1;float:none!important;}
+            #tinfo > .t_par {grid-column:1;grid-row:2;white-space:normal;min-width:0;}
+            #tinfo > .t_add {grid-column:1;grid-row:3;}
+            #tinfo #rate {grid-column:2;grid-row:2 / span 2;position:static!important;float:none!important;display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:6px 10px;margin:0!important;width:auto!important;font-size:20px;line-height:1.3;}
+            #tinfo #choice {position:static!important;float:none!important;margin:0!important;width:auto!important;}
+            #tinfo #choice select {position:static!important;float:none!important;margin:0!important;max-width:100%;font:inherit;}
+            @media(max-width:850px) {#tinfo {grid-template-columns:minmax(0,1fr)!important;} #tinfo > div[style*="float"] {grid-column:1;grid-row:2;} #tinfo > .t_par {grid-row:3;} #tinfo > .t_add {grid-row:4;} #tinfo #rate {grid-column:1;grid-row:5;justify-content:flex-start;}}
+        `;
+        (document.head || document.documentElement).append(style);
+    }
 
     function initCatalogSearch() {
         // The site's /music/ POST returns the catalog instead of search results.
@@ -3026,6 +3186,7 @@ darsreza@gmail.com
         if (repairedPage && repairedPage !== location.href) { location.replace(repairedPage); return; }
         initCommentLinkRepair();
         initCatalogSearch();
+        initRatingLayout();
         initListCoverGuard();
         await initSiteHistory();
         bindSfCacheLifecycle();
@@ -3211,7 +3372,8 @@ darsreza@gmail.com
         if (trackPageRow) {
             // The current HTML is fresher than persisted metadata; no refetch.
             const pageUrl = getPageUrl(trackPageRow);
-            sfCache.set(pageUrl, trackPageSfFile);
+            if (trackPageSfFile) sfCache.set(pageUrl, trackPageSfFile);
+            else sfCache.delete(pageUrl);
         }
 
         /*
@@ -3258,13 +3420,13 @@ darsreza@gmail.com
             updateDownload();
             // Prepare this exact Audio instance before the first click. The
             // normal selectTrack fast path reuses its buffer without a src reset.
-            audio.preload = 'auto';
-            audio.src = getStreamUrl(trackPageSfFile);
-            audio.load();
-            // On a track page the ID is already known. Show its waveform
-            // before Play; the playing handler will not schedule it again.
-            displayedWaveFile = trackPageSfFile;
-            setWaveHref(getWaveUrl(trackPageSfFile));
+            if (trackPageSfFile) {
+                audio.preload = 'auto';
+                audio.src = getStreamUrl(trackPageSfFile);
+                audio.load();
+                // Probe the image too, so page playback reports missing waveforms.
+                loadWaveformAfterPlayback();
+            }
         }
 
         /*
