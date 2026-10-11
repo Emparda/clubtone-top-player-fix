@@ -4,7 +4,7 @@
 // @copyright    2026 Dmitriy Oshev
 // @license      LicenseRef-Clubtone-Personal-Use
 // @namespace    clubtone-player-fix
-// @version      1.5.24
+// @version      1.5.25
 // @homepageURL  https://github.com/Emparda/clubtone-top-player-fix
 // @supportURL   https://github.com/Emparda/clubtone-top-player-fix/issues
 // @updateURL    https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix.meta.js
@@ -55,7 +55,7 @@ darsreza@gmail.com
 (function () {
     'use strict';
 
-    const VERSION = '1.5.24';
+    const VERSION = '1.5.25';
 
     // Project attribution: Dmitriy Oshev; created with Codex GPT.
     // Creation date supplied by the author: 2026-10-02.
@@ -2856,6 +2856,7 @@ darsreza@gmail.com
         const originals = new WeakMap();
         const attempted = new WeakMap();
         const fallback = new URL('/dsgn/nc.png', location.origin).href;
+        let startedCovers = 0;
         function cardFor(node) {
             const row = node?.closest?.('#tracks li, #lastnews li');
             return row && trackIdFromHref(row.querySelector('.tn a[href]')?.getAttribute('href')) ? row : null;
@@ -2889,7 +2890,12 @@ darsreza@gmail.com
             }
             if (!cover || attempted.get(image) === cover) return;
             attempted.set(image, cover);
-            image.loading = 'lazy';
+            // Start the visible lead covers without waiting for lazy-load layout.
+            // Keep the rest lazy so a large catalog does not compete with audio.
+            image.loading = startedCovers < 6 ? 'eager' : 'lazy';
+            image.fetchPriority = startedCovers < 2 ? 'high' : 'auto';
+            image.decoding = 'async';
+            startedCovers++;
             image.addEventListener('error', () => {
                 if (image.src === cover) image.src = originals.get(image) || fallback;
             }, {once:true});
@@ -2924,6 +2930,7 @@ darsreza@gmail.com
             if (next === list) return;
             observer.disconnect();
             list = next;
+            startedCovers = 0;
             if (list) {
                 observer.observe(list, {subtree:true, childList:true, attributes:true, attributeFilter:['src','style','data-src2']});
                 scan(list);
@@ -2993,10 +3000,32 @@ darsreza@gmail.com
     }
 
 
+    function initCatalogSearch() {
+        // The site's /music/ POST returns the catalog instead of search results.
+        // Use the same POST endpoint as its working home-page search. Native
+        // form encoding preserves accents, ampersands and other query characters.
+        document.addEventListener('submit', event => {
+            const form = event.target;
+            if (!form?.matches?.('form') || !form.querySelector('#search[name="query"]')) return;
+            const action = safeWebUrl(form.getAttribute('action'), location.href);
+            if (!action || action.origin !== location.origin || !/^\/(?:music|load)\/$/.test(action.pathname)) return;
+            form.action = location.origin + '/load/';
+            form.method = 'post';
+        }, true);
+    }
+
+    function findMainPlayer() {
+        const candidates = [...document.querySelectorAll('#pageplayer')];
+        return candidates.find(node => node.querySelector('svg #wave') && node.querySelector('.pt-play-pause'))
+            || candidates.find(node => node.querySelector('.pt-play-pause') && !node.querySelector('.pt-hide'))
+            || candidates[0] || null;
+    }
+
     async function init() {
         const repairedPage = repairedCommentUrl(location.href);
         if (repairedPage && repairedPage !== location.href) { location.replace(repairedPage); return; }
         initCommentLinkRepair();
+        initCatalogSearch();
         initListCoverGuard();
         await initSiteHistory();
         bindSfCacheLifecycle();
@@ -3030,10 +3059,7 @@ darsreza@gmail.com
             if (!rows.length) return;
         }
 
-        player =
-            document.querySelector(
-                '#pageplayer'
-            );
+        player = findMainPlayer();
 
         if (!player) {
             return;

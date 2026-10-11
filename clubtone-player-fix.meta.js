@@ -4,7 +4,7 @@
 // @copyright    2026 Dmitriy Oshev
 // @license      LicenseRef-Clubtone-Personal-Use
 // @namespace    clubtone-player-fix
-// @version      1.5.24
+// @version      1.5.25
 // @homepageURL  https://github.com/Emparda/clubtone-top-player-fix
 // @supportURL   https://github.com/Emparda/clubtone-top-player-fix/issues
 // @updateURL    https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix.meta.js

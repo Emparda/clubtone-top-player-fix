@@ -1,4 +1,4 @@
-# Clubtone TOP Player Fix 1.5.24
+# Clubtone TOP Player Fix 1.5.25
 
 Скрипт для браузера Chrome, который восстанавливает работу штатного плеера Clubtone, обеспечивая воспроизведение музыки через Soundfiles
 
