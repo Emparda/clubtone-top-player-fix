@@ -2,6 +2,8 @@
 
 Скрипт для браузера Chrome, который восстанавливает работу штатного плеера Clubtone, обеспечивая воспроизведение музыки через Soundfiles
 
+<img width="1774" height="887" alt="Изображение ChatGPT 11 окт  2026 г , 23_53_21" src="https://github.com/user-attachments/assets/b60556f5-2e4b-46d7-bd6f-3c2fecf9656d" />
+
 ## Установка
 
 ### 1. Установить [Tampermonkey](https://chromewebstore.google.com/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo?hl=ru)
