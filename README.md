@@ -22,14 +22,14 @@
 
 **Основной способ:** 
 
-1. Открыть [Clubtone TOP Player Fix](https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix.user.js) и нажать «Установить» в Tampermonkey
-2. При успешной установке достаточно только этого способа
+- Открыть [Clubtone TOP Player Fix](https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix.user.js) и нажать «Установить» в Tampermonkey
+- При успешной установке достаточно только этого способа
 
 **Импорт файла:**
 
-1. Скачать файл [clubtone-player-fix.user.js](https://github.com/Emparda/clubtone-top-player-fix/blob/main/clubtone-player-fix.user.js)
-2. Открыть Tampermonkey → «Панель управления» → «Утилиты» → «Импорт файлов»
-3. Выбрать скачанный файл и подтвердить установку
+- Скачать файл [clubtone-player-fix.user.js](https://github.com/Emparda/clubtone-top-player-fix/blob/main/clubtone-player-fix.user.js)
+- Открыть Tampermonkey → «Панель управления» → «Утилиты» → «Импорт файлов»
+- Выбрать скачанный файл и подтвердить установку
 
 ### 4. Открыть Clubtone
 
@@ -79,7 +79,7 @@
 ## Обновление
 
 - При включённой проверке обновлений Tampermonkey периодически проверяет новые версии. Проверка не обязательно происходит сразу после публикации
-- **Установить обновление** можно самому → [нажать сюда](https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix.user.js)   
+- **Установить обновление** можно самому если [нажать сюда](https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix.user.js)   
 - Установить обновление вручную или включить проверку обновлений → Панель управления Tampermonkey → Нажать на Clubtone TOP Player Fix → Настройки → Обновления → Проверить обновления скриптов
 
 ## Лицензия
