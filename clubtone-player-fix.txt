@@ -1375,6 +1375,9 @@ darsreza@gmail.com
         // Alternative embedded player supplies the source as a script attribute.
         const embedded = html.match(/<script\b[^>]*\bdata-file\s*=\s*["']https:\/\/soundfiles\.eu\/([A-Za-z0-9_-]{1,128})\/file\/?(?:[?#][^"']*)?["'][^>]*>/i);
         if (embedded) return embedded[1];
+        // Old Clubtone templates retain the Soundfiles ID in a malformed waveform URL.
+        const legacyWave = html.match(/<[^>]+\bdata-wf\s*=\s*["'](?:https?:\/\/|tps:\/\/)soundfiles\.eu\/([A-Za-z0-9_-]{1,128})\/(?:file\/?|fittps:)["'][^>]*>/i);
+        if (legacyWave) return legacyWave[1];
         let match =
             html.match(
                 /\b(?:var\s+)?sffile\s*=\s*["']([^"']+)["']/i
@@ -2890,7 +2893,8 @@ darsreza@gmail.com
             .find(node => /\b(?:var\s+)?sffile\s*=\s*["']/.test(node.textContent));
         const sfFile = (script && extractSfFile(script.textContent))
             || [...document.querySelectorAll('.brief script[data-file]')]
-                .map(node => extractSfFile(node.outerHTML)).find(Boolean) || null;
+                .map(node => extractSfFile(node.outerHTML)).find(Boolean)
+            || extractSfFile(document.querySelector('#pageplayer #wf[data-wf]')?.outerHTML || '') || null;
         // Pages without Soundfiles still need the shared error notification.
         const row = document.createElement('div');
         const link = document.createElement('a');
