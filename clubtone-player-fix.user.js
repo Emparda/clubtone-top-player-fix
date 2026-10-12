@@ -3316,6 +3316,17 @@ darsreza@gmail.com
             .brief:has(.sf-embed) {box-sizing:border-box!important;width:100%!important;border:0!important;padding:0!important;margin:0!important;}
             .brief p:has(.sf-embed) {margin:0!important;padding:0!important;}
             #pageplayer .pt-current-track-title {display:none!important;}
+            /* Keep the track-page clock inside the waveform, centered with 6px vertical clearance. */
+            #pageplayer[data-ct-track-page] .pt-scrubber {position:relative!important;}
+            #pageplayer[data-ct-track-page] .pt-time {
+                position:absolute!important;top:50%!important;bottom:auto!important;
+                right:8px!important;left:auto!important;margin:0!important;padding:0!important;
+                transform:translateY(-50%)!important;float:none!important;
+                font:600 12px/18px Arial,sans-serif!important;font-variant-numeric:tabular-nums;
+                white-space:nowrap;color:#fff!important;opacity:1!important;
+                text-shadow:0 1px 2px #000,0 0 2px #000;pointer-events:none;
+            }
+
             .brief:has(script[src*="soundfiles.eu/embed/"], .sf-player-container) {box-sizing:border-box!important;width:100%!important;border:0!important;padding:0!important;margin:0!important;}
             .brief:has(script[src*="soundfiles.eu/embed/"], .sf-player-container, .sf-embed) > br {display:none!important;}
             .brief:has(script[src*="soundfiles.eu/embed/"], .sf-player-container) > p:empty,
