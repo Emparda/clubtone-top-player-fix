@@ -1371,6 +1371,9 @@ darsreza@gmail.com
     }
 
     function extractSfFile(html) {
+        // Alternative embedded player supplies the source as a script attribute.
+        const embedded = html.match(/<script\b[^>]*\bdata-file\s*=\s*["']https:\/\/soundfiles\.eu\/([A-Za-z0-9_-]{1,128})\/file\/?(?:[?#][^"']*)?["'][^>]*>/i);
+        if (embedded) return embedded[1];
         let match =
             html.match(
                 /\b(?:var\s+)?sffile\s*=\s*["']([^"']+)["']/i
@@ -2884,7 +2887,9 @@ darsreza@gmail.com
         if (!trackIdFromHref(location.href) || !document.querySelector('#pageplayer')) return null;
         const script = [...document.querySelectorAll('script:not([src])')]
             .find(node => /\b(?:var\s+)?sffile\s*=\s*["']/.test(node.textContent));
-        const sfFile = script && extractSfFile(script.textContent);
+        const sfFile = (script && extractSfFile(script.textContent))
+            || [...document.querySelectorAll('.brief script[data-file]')]
+                .map(node => extractSfFile(node.outerHTML)).find(Boolean) || null;
         // Pages without Soundfiles still need the shared error notification.
         const row = document.createElement('div');
         const link = document.createElement('a');
