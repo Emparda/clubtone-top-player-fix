@@ -4,7 +4,7 @@
 // @copyright    2026 Dmitriy Oshev
 // @license      LicenseRef-Clubtone-Personal-Use
 // @namespace    clubtone-player-fix
-// @version      1.5.34
+// @version      1.5.35
 // @homepageURL  https://github.com/Emparda/clubtone-top-player-fix
 // @supportURL   https://github.com/Emparda/clubtone-top-player-fix/issues
 // @updateURL    https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix.meta.js
@@ -56,7 +56,7 @@ darsreza@gmail.com
 (function () {
     'use strict';
 
-    const VERSION = '1.5.34';
+    const VERSION = '1.5.35';
 
     // Project attribution: Dmitriy Oshev; created with Codex GPT.
     // Creation date supplied by the author: 2026-10-02.
@@ -251,7 +251,7 @@ darsreza@gmail.com
     // HTTP
     // =========================================================
 
-    function requestText(url) {
+    function requestText(url, fresh = false) {
         return new Promise((resolve, reject) => {
             const target = safeWebUrl(url, MIRROR);
             if (!target || !/^(?:www\.)?clubtone\.(?:do\.am|net)$/i.test(target.hostname)) {
@@ -260,6 +260,7 @@ darsreza@gmail.com
             GM_xmlhttpRequest({
                 method: 'GET',
                 url,
+                ...(fresh ? {headers: {'Cache-Control': 'no-cache', 'Pragma': 'no-cache'}} : {}),
                 timeout: 15000,
 
                 onload(response) {
@@ -1400,7 +1401,7 @@ darsreza@gmail.com
     }
 
     async function getSfFile(
-        pageUrl
+        pageUrl, fresh = false
     ) {
         if (!pageUrl) {
             throw new Error(
@@ -1431,7 +1432,7 @@ darsreza@gmail.com
                 try {
                     const html =
                         await requestText(
-                            pageUrl
+                            pageUrl, fresh
                         );
 
                     const sfFile =
@@ -1695,9 +1696,10 @@ darsreza@gmail.com
         // A failed background preload must never start playback by itself.
         if (trackPageRow && !trackPagePlayRequested) return;
         if (media !== audio || ![2, 3, 4].includes(media.error?.code) || !currentRow) return;
-        // Format/source errors include server HTML challenges. Repeating the
-        // same requests cannot solve a CAPTCHA and adds unnecessary load.
-        if ([3, 4].includes(media.error?.code)) return;
+        // A removed upload often reports MEDIA_ERR_SRC_NOT_SUPPORTED (4).
+        // Revalidate the page, but do not replay the same unsupported source.
+        const failedFile = currentSfFile;
+        const sourceError = [3, 4].includes(media.error?.code);
         const pageUrl = getPageUrl(currentRow);
         if (!pageUrl) return;
         const now = Date.now();
@@ -1718,8 +1720,9 @@ darsreza@gmail.com
             for (const [key, entry] of audioWarmCache) {
                 if (entry.pageUrl === pageUrl) { releaseWarmEntry(entry); audioWarmCache.delete(key); }
             }
-            await getSfFile(pageUrl);
+            const freshFile = await getSfFile(pageUrl, true);
             if (serial !== requestSerial || media !== audio) return;
+            if (sourceError && freshFile === failedFile) return;
             await selectTrack(index, true);
         } catch (error) {
             warn('Stream refresh failed; manual retry remains available:', error);
@@ -2415,6 +2418,63 @@ darsreza@gmail.com
         });
     }
 
+    // A paused HTTP stream can lose its connection while the tab is in the
+    // background. Retry only after a new play request, once, keeping position.
+    const resumeGuards = new WeakSet();
+    function bindResumeRecovery(media) {
+        if (!media || resumeGuards.has(media)) return;
+        resumeGuards.add(media);
+        let timer = null, retried = false, restoring = false, position = null;
+        const clear = () => { clearTimeout(timer); timer = null; };
+        const arm = () => {
+            clear();
+            const start = media.currentTime;
+            timer = setTimeout(() => {
+                if (media.paused || media.ended || media.error || retried ||
+                    Math.abs(media.currentTime - start) > 0.1) return;
+                retried = true;
+                position = media.currentTime;
+                restoring = true;
+                media.load();
+                media.play().catch(error => warn('Resume recovery:', error))
+                    .finally(() => { restoring = false; });
+            }, 10000);
+        };
+        media.addEventListener('play', () => {
+            if (!restoring) { retried = false; arm(); }
+        });
+        media.addEventListener('loadedmetadata', () => {
+            if (position === null) return;
+            const saved = position; position = null;
+            if (Number.isFinite(saved) && saved > 0) {
+                try { media.currentTime = saved; } catch {}
+            }
+        });
+        media.addEventListener('pause', () => {
+            clear();
+            if (!restoring) position = null;
+        });
+        media.addEventListener('ended', clear);
+        media.addEventListener('error', clear);
+    }
+
+    let vinylTimer = null;
+    function syncTrackVinyl(playing) {
+        if (!trackPageRow) return;
+        clearTimeout(vinylTimer);
+        const records = document.querySelectorAll('.vinyl .record');
+        if (playing) {
+            const cover = document.querySelector('.cover img');
+            document.querySelectorAll('.vinyl .cover2').forEach(node => {
+                if (cover) node.style.backgroundImage = `url("${cover.src}")`;
+            });
+            records.forEach(node => node.classList.add('circle', 'in'));
+        } else {
+            records.forEach(node => node.classList.remove('in'));
+            vinylTimer = setTimeout(() => records.forEach(node => node.classList.remove('circle')), 320);
+        }
+    }
+
     function bindAudioEvents(media) {
         if (
             !media ||
@@ -2425,6 +2485,7 @@ darsreza@gmail.com
 
         media.dataset.ctFixBound =
             '1';
+        bindResumeRecovery(media);
 
         media.addEventListener(
             'playing',
@@ -2434,6 +2495,7 @@ darsreza@gmail.com
                 }
 
                 if (media.paused || media.error) return;
+                syncTrackVinyl(true);
                 soundfilesFailed = false;
                 hidePlaybackNotice();
                 prepareAfterPlaying(media);
@@ -2480,6 +2542,7 @@ darsreza@gmail.com
                         'pt-playing'
                     );
 
+                syncTrackVinyl(false);
                 stopProgressLoop();
 
                 updateProgress();
@@ -2931,8 +2994,17 @@ darsreza@gmail.com
             else if (event.target.matches?.('.sf-player-container audio')) {
                 if (audio && !audio.paused) audio.pause();
                 claimPlayerFocus();
+                bindResumeRecovery(event.target);
+                // The first play event has already reached this capture handler.
             }
         }, true);
+        for (const type of ['playing', 'pause', 'ended']) {
+            document.addEventListener(type, event => {
+                if (event.target.matches?.('.sf-player-container audio')) {
+                    syncTrackVinyl(type === 'playing' || !!audio && !audio.paused);
+                }
+            }, true);
+        }
         const box = player.querySelector('#download');
         if (trackPageRow && trackPageSfFile && box && !box.querySelector('a')) {
             const link = document.createElement('a');
@@ -3181,19 +3253,74 @@ darsreza@gmail.com
         }).observe(document, {childList:true, subtree:true});
     }
 
+    // The site's primaryColor plugin samples only the first quarter of the
+    // byte array and crops natural-size images. Correct white results only
+    // when a full-cover sample proves that most of the artwork is chromatic.
+    function fullCoverColor(data) {
+        let count = 0, chromatic = 0, r = 0, g = 0, b = 0;
+        for (let i = 0; i < data.length; i += 4) {
+            if (data[i + 3] < 240) continue;
+            const red = data[i], green = data[i + 1], blue = data[i + 2];
+            count++; r += red; g += green; b += blue;
+            if (Math.max(red, green, blue) - Math.min(red, green, blue) >= 35) chromatic++;
+        }
+        if (!count || chromatic / count <= 0.5) return null;
+        return [Math.round(r / count), Math.round(g / count), Math.round(b / count)];
+    }
+
+    function initTrackColorGuard() {
+        if (!trackIdFromHref(location.href)) return;
+        const start = () => {
+            const info = document.querySelector('#tinfo');
+            const cover = document.querySelector('.cover img');
+            if (!info || !cover) return;
+            let sampledUrl = null, corrected = null;
+            const update = () => {
+                const rgb = getComputedStyle(info).backgroundColor.match(/[\d.]+/g)?.map(Number);
+                if (!rgb || rgb.length < 3 || Math.min(...rgb.slice(0, 3)) < 235 ||
+                    !cover.complete || !cover.naturalWidth) return;
+                const url = cover.currentSrc || cover.src;
+                if (url !== sampledUrl) {
+                    sampledUrl = url; corrected = null;
+                    try {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = canvas.height = 64;
+                        const ctx = canvas.getContext('2d', {willReadFrequently: true});
+                        ctx.drawImage(cover, 0, 0, 64, 64);
+                        corrected = fullCoverColor(ctx.getImageData(0, 0, 64, 64).data);
+                    } catch { return; } // Keep native behavior for unreadable images.
+                }
+                if (!corrected) return;
+                info.style.backgroundColor = `rgb(${corrected.join(',')})`;
+                const [r, g, b] = corrected;
+                const light = Math.sqrt(0.299*r*r + 0.587*g*g + 0.114*b*b) > 127.5;
+                info.classList.toggle('light', light);
+                info.classList.toggle('dark', !light);
+            };
+            new MutationObserver(update).observe(info, {attributes: true, attributeFilter: ['style']});
+            cover.addEventListener('load', () => { sampledUrl = null; update(); });
+            update();
+        };
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, {once:true});
+        else start();
+    }
+
     function initRatingLayout() {
         if (!trackIdFromHref(location.href)) return;
         const style = document.createElement('style');
         style.textContent = `
             /* Track-page stack: use the parent width, including all borders. */
+            #pageplayer .pt-controls-wrapper {box-sizing:border-box!important;width:100%!important;max-width:none!important;margin-left:0!important;margin-right:0!important;border-left:0!important;border-right:0!important;}
+            #tinfo, #ct-playback-notice.ct-track-audio-notice {border-left:0!important;border-right:0!important;}
             #pageplayer {box-sizing:border-box!important;width:100%!important;margin-left:0!important;margin-right:0!important;}
             .brief:has(.sf-embed) {box-sizing:border-box!important;width:100%!important;border:0!important;padding:0!important;margin:0!important;}
             .brief p:has(.sf-embed) {margin:0!important;padding:0!important;}
             #pageplayer .pt-current-track-title {display:none!important;}
             .brief:has(script[src*="soundfiles.eu/embed/"], .sf-player-container) {box-sizing:border-box!important;width:100%!important;border:0!important;padding:0!important;margin:0!important;}
+            .brief:has(script[src*="soundfiles.eu/embed/"], .sf-player-container, .sf-embed) > br {display:none!important;}
             .brief:has(script[src*="soundfiles.eu/embed/"], .sf-player-container) > p:empty,
             .brief > p:has(> script[src*="soundfiles.eu/embed/"]) {display:none!important;}
-            .brief .sf-player-container {box-sizing:border-box!important;width:100%!important;max-width:100%!important;margin:0!important;}
+            .brief .sf-player-container {border-left:0!important;border-right:0!important;box-sizing:border-box!important;width:100%!important;max-width:100%!important;margin:0!important;}
             .brief .sf-main-body {width:100%!important;min-width:0;box-sizing:border-box;}
             .brief .waveform-wrapper {min-width:0;}
             #tinfo {box-sizing:border-box!important;width:100%!important;margin-left:0!important;margin-right:0!important;}
@@ -3238,6 +3365,7 @@ darsreza@gmail.com
         initCommentLinkRepair();
         initCatalogSearch();
         initRatingLayout();
+        initTrackColorGuard();
         initAlternativeEmbedRepair();
         initListCoverGuard();
         await initSiteHistory();
