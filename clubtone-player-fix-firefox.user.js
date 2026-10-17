@@ -4,7 +4,7 @@
 // @copyright    2026 Dmitriy Oshev
 // @license      LicenseRef-Clubtone-Personal-Use
 // @namespace    clubtone-player-fix
-// @version      1.0.2
+// @version      1.0.1
 // @homepageURL  https://github.com/Emparda/clubtone-top-player-fix
 // @supportURL   https://github.com/Emparda/clubtone-top-player-fix/issues
 // @updateURL    https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix-firefox.user.js
@@ -57,7 +57,7 @@ darsreza@gmail.com
 (function () {
     'use strict';
 
-    const VERSION = '1.0.2';
+    const VERSION = '1.0.1';
 
     // Project attribution: Dmitriy Oshev; created with Codex GPT.
     // Creation date supplied by the author: 2026-10-02.
@@ -3481,13 +3481,6 @@ darsreza@gmail.com
             return;
         }
         initTrackPageControls();
-
-        // Keep the floating list player above the site's fixed ad banners.
-        // Set only the stacking level: preserve its native position, visibility,
-        // and the existing Audio instance. The inline track player is excluded.
-        if (!trackPageRow) {
-            player.style.setProperty('z-index', '2147483647', 'important');
-        }
 
         /*
          * Активная обложка выглядит как штатное состояние hover,
