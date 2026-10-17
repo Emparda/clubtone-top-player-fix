@@ -4,7 +4,7 @@
 // @copyright    2026 Dmitriy Oshev
 // @license      LicenseRef-Clubtone-Personal-Use
 // @namespace    clubtone-player-fix
-// @version      1.0.0
+// @version      1.0.2
 // @homepageURL  https://github.com/Emparda/clubtone-top-player-fix
 // @supportURL   https://github.com/Emparda/clubtone-top-player-fix/issues
 // @updateURL    https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix-firefox.user.js
@@ -57,7 +57,7 @@ darsreza@gmail.com
 (function () {
     'use strict';
 
-    const VERSION = '1.0.0';
+    const VERSION = '1.0.2';
 
     // Project attribution: Dmitriy Oshev; created with Codex GPT.
     // Creation date supplied by the author: 2026-10-02.
@@ -3371,7 +3371,70 @@ darsreza@gmail.com
             || candidates[0] || null;
     }
 
+    function initTouchMusicMenu() {
+        const touchLayout = matchMedia('(hover: none) and (pointer: coarse)');
+        let opened = null;
+        const style = document.createElement('style');
+        style.textContent = `
+            @media (hover: none) and (pointer: coarse) {
+                #menu .nav > li.ct-touch-music {position:relative!important;}
+                #menu .nav > li.ct-touch-music > ul {
+                    display:none!important;top:100%!important;left:0!important;
+                    z-index:10001!important;max-height:70vh;overflow-y:auto;
+                }
+                #menu .nav > li.ct-touch-music.ct-touch-open > ul {display:block!important;}
+                #menu .nav > li.ct-touch-music > ul > li > a {
+                    min-height:44px;box-sizing:border-box;display:block;
+                }
+            }
+        `;
+        (document.head || document.documentElement).append(style);
+        function close() {
+            if (!opened) return;
+            opened.classList.remove('ct-touch-open');
+            opened.querySelector(':scope > a')?.setAttribute('aria-expanded', 'false');
+            opened = null;
+        }
+        function prepare() {
+            for (const item of document.querySelectorAll('#menu .nav > li')) {
+                const trigger = item.querySelector(':scope > a');
+                const submenu = item.querySelector(':scope > ul');
+                if (!trigger || !submenu || trigger.textContent.trim() !== 'Музыка') continue;
+                item.classList.add('ct-touch-music');
+                trigger.setAttribute('aria-haspopup', 'true');
+                if (touchLayout.matches) trigger.setAttribute('aria-expanded', 'false');
+            }
+        }
+        document.addEventListener('click', event => {
+            if (!touchLayout.matches || event.button !== 0 || event.ctrlKey ||
+                event.metaKey || event.shiftKey || event.altKey) return;
+            const trigger = event.target.closest?.('#menu .nav > li.ct-touch-music > a');
+            if (!trigger) { close(); return; }
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            const item = trigger.parentElement;
+            const wasOpen = opened === item;
+            close();
+            if (!wasOpen) {
+                opened = item;
+                item.classList.add('ct-touch-open');
+                trigger.setAttribute('aria-expanded', 'true');
+            }
+        }, true);
+        document.addEventListener('keydown', event => { if (event.key === 'Escape') close(); });
+        touchLayout.addEventListener('change', () => {
+            close();
+            document.querySelectorAll('#menu .ct-touch-music > a').forEach(trigger => {
+                if (touchLayout.matches) trigger.setAttribute('aria-expanded', 'false');
+                else trigger.removeAttribute('aria-expanded');
+            });
+        });
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', prepare, {once:true});
+        else prepare();
+    }
+
     async function init() {
+        initTouchMusicMenu();
         const repairedPage = repairedCommentUrl(location.href);
         if (repairedPage && repairedPage !== location.href) { location.replace(repairedPage); return; }
         initCommentLinkRepair();
@@ -3418,6 +3481,13 @@ darsreza@gmail.com
             return;
         }
         initTrackPageControls();
+
+        // Keep the floating list player above the site's fixed ad banners.
+        // Set only the stacking level: preserve its native position, visibility,
+        // and the existing Audio instance. The inline track player is excluded.
+        if (!trackPageRow) {
+            player.style.setProperty('z-index', '2147483647', 'important');
+        }
 
         /*
          * Активная обложка выглядит как штатное состояние hover,
