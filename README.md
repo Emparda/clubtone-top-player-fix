@@ -104,7 +104,7 @@
 
 Выражаю искреннюю благодарность участникам сообщества Clubtone, оказавшим помощь в тестировании и продвижении  
 
-[Parky](https://clubtone.do.am/index/8-542564), [alex_power](https://clubtone.do.am/index/8-598397)
+Отдельное спасибо - [Parky](https://clubtone.do.am/index/8-542564), [alex_power](https://clubtone.do.am/index/8-598397)
 
 ## Обратная связь
 
