@@ -91,16 +91,22 @@
 ## Обновление
 
 - При включённой проверке обновлений Tampermonkey периодически проверяет новые версии, но проверка не обязательно происходит сразу после публикации
-- Если доступно обновление то его можно установить самому, выбрав для этого нужный браузер - [Chrome](https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix.user.js) или [Firefox](https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix-firefox.user.js)
+- Если доступно обновление то его можно установить самому, выбрав нужную ссылку на [Chrome](https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix.user.js) или [Firefox](https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix-firefox.user.js)
 - Установить обновление вручную или включить проверку обновлений → Панель управления Tampermonkey → Нажать на Clubtone TOP Player Fix → Настройки → Обновления
 
 ## Лицензия
 
 [Условия распространения](LICENSE.txt)
 
+## Вклад в развитие
+
+Выражаю искреннюю благодарность участникам сообщества Clubtone, оказавшим помощь в тестировании и продвижении  
+
+[Parky](https://clubtone.do.am/index/8-542564), [alex_power](https://clubtone.do.am/index/8-598397)
+
 ## Обратная связь
 
 [darsreza@gmail.com](mailto:darsreza@gmail.com)  
-[empirit](https://clubtone.do.am/index/8-422769)
+[https://clubtone.empirit](https://clubtone.do.am/index/8-422769)
 
 
