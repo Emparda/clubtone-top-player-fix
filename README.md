@@ -4,7 +4,7 @@
 
 <img width="1200" height="600" alt="Изображение ChatGPT 11 окт  2026 г , 23_53_22" src="https://github.com/user-attachments/assets/97939bc0-0085-4eac-a0ba-1f2de8766209" />
 
-## Установка в браузере Chrome
+## Установка для браузера Chrome
 
 ### 1. Установить [Tampermonkey](https://chromewebstore.google.com/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo?hl=ru)
 
@@ -38,7 +38,7 @@
 - Готово, можно перейти на [clubtone.do.am](https://clubtone.do.am/) или [clubtone.net](https://clubtone.net/). Скрипт запускается автоматически   
 Сохраняются привычный вид плеера и основные способы управления
 
-## Установка в браузере Firefox
+## Установка для браузера Firefox
 
 1. Установить [Tampermonkey](https://addons.mozilla.org/en-US/firefox/addon/tampermonkey/)
 2. Установить скрипт [clubtone-player-fix-firefox.user.js](https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix-firefox.user.js)
