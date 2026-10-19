@@ -106,7 +106,6 @@
 
 ## Обратная связь
 
-[darsreza@gmail.com](mailto:darsreza@gmail.com)  
-[https://clubtone.empirit](https://clubtone.do.am/index/8-422769)
+[empirit](https://clubtone.do.am/index/8-422769)
 
 
