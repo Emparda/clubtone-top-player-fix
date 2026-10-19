@@ -1,10 +1,10 @@
 # Clubtone TOP Player Fix 1.5.35
 
-Скрипт для браузера Chrome, который восстанавливает работу штатного плеера Clubtone, обеспечивая воспроизведение музыки через Soundfiles
+Скрипт для Chrome и Firefox, который восстанавливает работу штатного плеера Clubtone, обеспечивая воспроизведение музыки через Soundfiles
 
 <img width="1200" height="600" alt="Изображение ChatGPT 11 окт  2026 г , 23_53_22" src="https://github.com/user-attachments/assets/97939bc0-0085-4eac-a0ba-1f2de8766209" />
 
-## Установка
+## Установка в браузере Chrome
 
 ### 1. Установить [Tampermonkey](https://chromewebstore.google.com/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo?hl=ru)
 
@@ -37,6 +37,11 @@
 
 - Готово, можно перейти на [clubtone.do.am](https://clubtone.do.am/) или [clubtone.net](https://clubtone.net/). Скрипт запускается автоматически   
 Сохраняются привычный вид плеера и основные способы управления
+
+## Установка в браузере Firefox
+
+1. Установить [Tampermonkey](https://addons.mozilla.org/en-US/firefox/addon/tampermonkey/)
+2. Установить скрипт [clubtone-player-fix-firefox.user.js](https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix-firefox.user.js)
 
 ## Если скрипт не работает
 
@@ -86,7 +91,7 @@
 ## Обновление
 
 - При включённой проверке обновлений Tampermonkey периодически проверяет новые версии, но проверка не обязательно происходит сразу после публикации
-- Если доступно обновление то его можно установить самому, [нажав сюда](https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix.user.js)   
+- Если доступно обновление то его можно установить самому, выбрав для этого нужный браузер - [Chrome](https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix.user.js) или [Firefox](https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix-firefox.user.js)
 - Установить обновление вручную или включить проверку обновлений → Панель управления Tampermonkey → Нажать на Clubtone TOP Player Fix → Настройки → Обновления
 
 ## Лицензия
@@ -96,4 +101,6 @@
 ## Обратная связь
 
 [darsreza@gmail.com](mailto:darsreza@gmail.com)  
-[https://clubtone.empirit](https://clubtone.do.am/index/8-422769)
+[empirit](https://clubtone.do.am/index/8-422769)
+
+
