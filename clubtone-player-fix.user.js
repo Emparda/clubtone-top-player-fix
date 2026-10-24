@@ -3332,6 +3332,14 @@ darsreza@gmail.com
             .brief:has(script[src*="soundfiles.eu/embed/"], .sf-player-container) > p:empty,
             .brief > p:has(> script[src*="soundfiles.eu/embed/"]) {display:none!important;}
             .brief .sf-player-container {border-left:0!important;border-right:0!important;box-sizing:border-box!important;width:100%!important;max-width:100%!important;margin:0!important;}
+            /* Keep author content and collapsed paragraph margins inside the white panel. */
+            .brief:has(script[src*="soundfiles.eu/embed/"], .sf-player-container, .sf-embed) {
+                display:flow-root!important;min-width:0;overflow-wrap:anywhere;
+            }
+            .brief:has(script[src*="soundfiles.eu/embed/"], .sf-player-container, .sf-embed) > :not(script):not(style) {
+                box-sizing:border-box;max-width:100%;
+            }
+            .brief:has(script[src*="soundfiles.eu/embed/"], .sf-player-container, .sf-embed) + #tinfo {margin-top:0!important;}
             .brief .sf-main-body {width:100%!important;min-width:0;box-sizing:border-box;}
             .brief .waveform-wrapper {min-width:0;}
             #tinfo {box-sizing:border-box!important;width:100%!important;margin-left:0!important;margin-right:0!important;}
