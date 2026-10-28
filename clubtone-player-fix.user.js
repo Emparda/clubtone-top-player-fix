@@ -3357,18 +3357,69 @@ darsreza@gmail.com
         (document.head || document.documentElement).append(style);
     }
 
+    function normalizeSearchTitle(value) {
+        return String(value || '').normalize('NFKC').toLowerCase()
+            .replace(/[\u2010-\u2015\u2212]/g, '-')
+            .replace(/[\u2018\u2019`]/g, "'").replace(/\s+/g, ' ').trim();
+    }
+
     function initCatalogSearch() {
-        // The site's /music/ POST returns the catalog instead of search results.
-        // Use the same POST endpoint as its working home-page search. Native
-        // form encoding preserves accents, ampersands and other query characters.
+        const storageKey = 'ct-search-query-v1';
         document.addEventListener('submit', event => {
             const form = event.target;
-            if (!form?.matches?.('form') || !form.querySelector('#search[name="query"]')) return;
+            const input = form?.querySelector?.('#search[name="query"]');
+            if (!input || !form.matches('form')) return;
             const action = safeWebUrl(form.getAttribute('action'), location.href);
             if (!action || action.origin !== location.origin || !/^\/(?:music|load)\/$/.test(action.pathname)) return;
+            const query = input.value.trim();
+            if (!query) { event.preventDefault(); input.focus(); return; }
+            input.value = query;
+            try { sessionStorage.setItem(storageKey, JSON.stringify({query, time:Date.now()})); } catch (_) {}
             form.action = location.origin + '/load/';
             form.method = 'post';
         }, true);
+        const prepare = () => {
+            const input = document.querySelector('#lastnews #wrap #search[name="query"]');
+            if (!input) return;
+            const wrap = input.closest('#wrap');
+            wrap.classList.add('ct-search-form');
+            const style = document.createElement('style');
+            style.textContent = `
+                #lastnews > h3 {height:auto!important;white-space:normal!important;overflow-wrap:anywhere;}
+                #lastnews #wrap.ct-search-form {float:none!important;position:relative!important;clear:both;width:100%!important;height:38px!important;margin:10px 0 14px!important;box-sizing:border-box;}
+                #wrap.ct-search-form input#search {position:static!important;display:block!important;width:100%!important;height:38px!important;box-sizing:border-box!important;padding:5px 44px 5px 10px!important;font:18px/26px Arial,sans-serif!important;background:rgba(255,255,255,.65)!important;border:1px solid #bbb!important;cursor:text!important;transition:none!important;}
+                #wrap.ct-search-form #search_submit {top:3px!important;right:5px!important;}
+            `;
+            (document.head || document.documentElement).append(style);
+            const heading = document.querySelector('#lastnews > h3');
+            const match = heading?.textContent.match(/^\s*Поиск\s*\[([\s\S]*)\]\s*$/i);
+            if (!match || !/^\/(?:load|music)\//.test(location.pathname)) return;
+            let query = match[1].trim();
+            try {
+                const saved = JSON.parse(sessionStorage.getItem(storageKey) || 'null');
+                if (saved && typeof saved.query === 'string' && saved.query.length <= 10000
+                    && Date.now() - saved.time >= 0 && Date.now() - saved.time < 30 * 60 * 1000
+                    && normalizeSearchTitle(saved.query).startsWith(normalizeSearchTitle(query)) && query) {
+                    query = saved.query;
+                }
+            } catch (_) {}
+            heading.textContent = 'Поиск [' + query + ']';
+            input.value = query;
+            // Select the existing phrase when entering the field; typing replaces it.
+            input.addEventListener('focus', () => input.select());
+            const wanted = normalizeSearchTitle(query);
+            const container = document.querySelector('#tracks #conter');
+            if (!container || !wanted) return;
+            const entries = [...container.children].filter(node => /^entryID\d+$/.test(node.id));
+            const exact = entries.filter(node => normalizeSearchTitle(node.querySelector('.entryLink')?.textContent) === wanted);
+            if (!exact.length || !entries.length) return;
+            const marker = document.createComment('ct-search-results');
+            container.insertBefore(marker, entries[0]);
+            for (const entry of [...exact, ...entries.filter(node => !exact.includes(node))]) container.insertBefore(entry, marker);
+            marker.remove();
+        };
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', prepare, {once:true});
+        else prepare();
     }
 
     function findMainPlayer() {
