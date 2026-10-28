@@ -3383,6 +3383,7 @@ darsreza@gmail.com
             if (!input) return;
             const wrap = input.closest('#wrap');
             wrap.classList.add('ct-search-form');
+            input.placeholder = 'Вы что-то искали?';
             const style = document.createElement('style');
             style.textContent = `
                 #lastnews > h3 {height:auto!important;white-space:normal!important;overflow-wrap:anywhere;}
@@ -3391,6 +3392,24 @@ darsreza@gmail.com
                 #wrap.ct-search-form #search_submit {top:3px!important;right:5px!important;}
             `;
             (document.head || document.documentElement).append(style);
+            // Match the actual banner edges only on the home page.
+            if (location.pathname === '/') {
+                const banner = document.querySelector('#main_page_news > img');
+                if (banner) {
+                    const align = () => {
+                        const box = banner.getBoundingClientRect();
+                        if (box.width <= 0) return;
+                        const offset = box.left - wrap.getBoundingClientRect().left
+                            + (parseFloat(getComputedStyle(wrap).marginLeft) || 0);
+                        wrap.style.setProperty('width', box.width + 'px', 'important');
+                        wrap.style.setProperty('margin-left', offset + 'px', 'important');
+                    };
+                    align();
+                    banner.addEventListener('load', align, {once:true});
+                    if (typeof ResizeObserver === 'function') new ResizeObserver(align).observe(banner);
+                    window.addEventListener('resize', align, {passive:true});
+                }
+            }
             const heading = document.querySelector('#lastnews > h3');
             const match = heading?.textContent.match(/^\s*Поиск\s*\[([\s\S]*)\]\s*$/i);
             if (!match || !/^\/(?:load|music)\//.test(location.pathname)) return;
@@ -3403,7 +3422,7 @@ darsreza@gmail.com
                     query = saved.query;
                 }
             } catch (_) {}
-            heading.textContent = 'Поиск [' + query + ']';
+            heading.textContent = 'Поиск';
             input.value = query;
             // Select the existing phrase when entering the field; typing replaces it.
             input.addEventListener('focus', () => input.select());
