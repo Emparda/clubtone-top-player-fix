@@ -3365,23 +3365,6 @@ darsreza@gmail.com
 
     function initCatalogSearch() {
         const storageKey = 'ct-search-query-v1';
-        // Hide the server's verbose heading before the parser paints it.
-        // Keep the space reserved until prepare() has read the original query.
-        if (location.pathname === '/load/' || new URL(location.href).searchParams.has('search')) {
-            const earlyStyle = document.createElement('style');
-            earlyStyle.textContent = '#lastnews > h3:not([data-ct-search-ready]){visibility:hidden!important;}';
-            const mount = () => {
-                const root = document.head || document.documentElement;
-                if (!root) return false;
-                root.append(earlyStyle);
-                return true;
-            };
-            if (!mount()) {
-                const observer = new MutationObserver(() => { if (mount()) observer.disconnect(); });
-                observer.observe(document, {childList:true});
-            }
-        }
-
         document.addEventListener('submit', event => {
             const form = event.target;
             const input = form?.querySelector?.('#search[name="query"]');
@@ -3400,36 +3383,15 @@ darsreza@gmail.com
             if (!input) return;
             const wrap = input.closest('#wrap');
             wrap.classList.add('ct-search-form');
-            input.placeholder = 'Вы что-то искали?';
             const style = document.createElement('style');
             style.textContent = `
                 #lastnews > h3 {height:auto!important;white-space:normal!important;overflow-wrap:anywhere;}
                 #lastnews #wrap.ct-search-form {float:none!important;position:relative!important;clear:both;width:100%!important;height:38px!important;margin:10px 0 14px!important;box-sizing:border-box;}
                 #wrap.ct-search-form input#search {position:static!important;display:block!important;width:100%!important;height:38px!important;box-sizing:border-box!important;padding:5px 44px 5px 10px!important;font:18px/26px Arial,sans-serif!important;background:rgba(255,255,255,.65)!important;border:1px solid #bbb!important;cursor:text!important;transition:none!important;}
-                #wrap.ct-search-form input#search::placeholder {font:inherit!important;letter-spacing:normal!important;word-spacing:normal!important;font-variant:normal!important;color:#777;opacity:1;}
                 #wrap.ct-search-form #search_submit {top:3px!important;right:5px!important;}
             `;
             (document.head || document.documentElement).append(style);
-            // Match the actual banner edges only on the home page.
-            if (location.pathname === '/') {
-                const banner = document.querySelector('#main_page_news img[src$="/rip.png"]');
-                if (banner) {
-                    const align = () => {
-                        const box = banner.getBoundingClientRect();
-                        if (box.width <= 0) return;
-                        const offset = box.left - wrap.getBoundingClientRect().left
-                            + (parseFloat(getComputedStyle(wrap).marginLeft) || 0);
-                        wrap.style.setProperty('width', box.width + 'px', 'important');
-                        wrap.style.setProperty('margin-left', offset + 'px', 'important');
-                    };
-                    align();
-                    banner.addEventListener('load', align, {once:true});
-                    if (typeof ResizeObserver === 'function') new ResizeObserver(align).observe(banner);
-                    window.addEventListener('resize', align, {passive:true});
-                }
-            }
             const heading = document.querySelector('#lastnews > h3');
-            if (heading) heading.dataset.ctSearchReady = '1';
             const match = heading?.textContent.match(/^\s*Поиск\s*\[([\s\S]*)\]\s*$/i);
             if (!match || !/^\/(?:load|music)\//.test(location.pathname)) return;
             let query = match[1].trim();
@@ -3441,7 +3403,7 @@ darsreza@gmail.com
                     query = saved.query;
                 }
             } catch (_) {}
-            heading.textContent = 'Поиск';
+            heading.textContent = 'Поиск [' + query + ']';
             input.value = query;
             // Select the existing phrase when entering the field; typing replaces it.
             input.addEventListener('focus', () => input.select());
