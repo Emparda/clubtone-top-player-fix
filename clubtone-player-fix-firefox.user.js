@@ -4,7 +4,7 @@
 // @copyright    2026 Dmitriy Oshev
 // @license      LicenseRef-Clubtone-Personal-Use
 // @namespace    clubtone-player-fix
-// @version      1.0.2
+// @version      1.0.3
 // @homepageURL  https://github.com/Emparda/clubtone-top-player-fix
 // @supportURL   https://github.com/Emparda/clubtone-top-player-fix/issues
 // @updateURL    https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix-firefox.user.js
@@ -57,7 +57,7 @@ darsreza@gmail.com
 (function () {
     'use strict';
 
-    const VERSION = '1.0.2';
+    const VERSION = '1.0.3';
 
     // Project attribution: Dmitriy Oshev; created with Codex GPT.
     // Creation date supplied by the author: 2026-10-02.
@@ -1597,18 +1597,116 @@ darsreza@gmail.com
 
     let currentSourceUrl = null;
     let playbackNotice = null;
-    let noticePositionRestore = null;
+    let playbackNoticeCleanup = null;
     let soundfilesFailed = false;
 
     function hidePlaybackNotice() {
+        playbackNoticeCleanup?.();
+        playbackNoticeCleanup = null;
         playbackNotice?.remove();
         playbackNotice = null;
-        if (noticePositionRestore) {
-            const {node, value, priority} = noticePositionRestore;
-            if (value) node.style.setProperty('position', value, priority);
-            else node.style.removeProperty('position');
-            noticePositionRestore = null;
+
+    }
+
+    function playbackErrorText(error, page = false) {
+        if (error?.code === 'WAVE') return 'Волна недоступна или ещё формируется на Soundfiles — аудио можно слушать';
+        if (error?.challenge === true) return 'Аудио недоступно — откройте Soundfiles, пройдите проверку и нажмите «Повторить»';
+        const message = String(error?.message || '');
+        const status = Number(error?.httpStatus || message.match(/HTTP (\d{3})\b/)?.[1] || 0);
+        const subject = page ? 'страницу трека' : 'аудио';
+        const names = {400:'Bad Request',401:'Unauthorized',403:'Forbidden',404:'Not Found',408:'Request Timeout',410:'Gone',429:'Too Many Requests',500:'Internal Server Error',502:'Bad Gateway',503:'Service Unavailable',504:'Gateway Timeout'};
+        const label = status + (names[status] ? ' ' + names[status] : '');
+        if (status === 404 && error?.sfPage) return 'Страница Soundfiles не найдена — ошибка 404 Not Found';
+        if (status === 404) return page ? 'Страница трека не найдена — ошибка 404 Not Found' : 'Аудио недоступно — ошибка 404 Not Found';
+        if (status === 403) return 'Доступ к ' + (page ? 'странице трека' : 'аудио') + ' запрещён — ошибка 403 Forbidden';
+        if (status === 429) return 'Слишком много запросов — ошибка 429 Too Many Requests; повторите попытку позже';
+        if (status >= 500 && status <= 599) return 'Ошибка сервера — ' + label + '; повторите попытку позже';
+        if (status >= 400 && status <= 599) return 'Не удалось загрузить ' + subject + ' — ошибка ' + label;
+        if (/sffile/.test(message)) return 'Аудио недоступно — на странице нет поддерживаемой ссылки Soundfiles';
+        if (error?.name === 'NotAllowedError') return 'Браузер заблокировал воспроизведение — нажмите кнопку Play';
+        if (/Timeout/i.test(message)) return 'Не удалось загрузить ' + subject + ' — превышено время ожидания; нажмите «Повторить»';
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) return 'Нет подключения к сети — проверьте соединение и нажмите «Повторить»';
+        if (page) return 'Не удалось загрузить страницу трека — нажмите «Повторить»';
+        if (error?.mediaCode === 3) return 'Не удалось воспроизвести аудио — ошибка декодирования файла';
+        if (error?.mediaCode === 2 || /Network error/i.test(message)) return 'Не удалось загрузить аудио — ошибка соединения; нажмите «Повторить»';
+        // Media code 4 also occurs for missing uploads: do not assert a bad format.
+        return 'Аудио недоступно — причину определить не удалось; откройте Soundfiles или нажмите «Повторить»';
+    }
+
+    const audioDiagnostics = new Map();
+    const activeAudioDiagnostics = new Set();
+    let audioDiagnosticEpoch = 0;
+    function cancelAudioDiagnostics() {
+        audioDiagnosticEpoch++;
+        for (const cancel of [...activeAudioDiagnostics]) cancel();
+        for (const [key, entry] of audioDiagnostics) if (!entry.done) audioDiagnostics.delete(key);
+    }
+    function requestAudioDiagnostic(url, method) {
+        return new Promise(resolve => {
+            let request, settled = false;
+            const finish = value => {
+                if (settled) return;
+                settled = true;
+                activeAudioDiagnostics.delete(cancel);
+                resolve(value);
+            };
+            const cancel = () => { finish({status:0, cancelled:true}); try { request?.abort(); } catch (_) {} };
+            activeAudioDiagnostics.add(cancel);
+            try {
+                request = GM_xmlhttpRequest({method, url, timeout:10000,
+                    onload:r => finish({status:Number(r.status) || 0,
+                        challenge:/^cf-mitigated:\s*challenge\s*$/im.test(r.responseHeaders || '')}),
+                    onprogress:r => { if (r.loaded > 512 * 1024) cancel(); },
+                    onerror:() => finish({status:0}), ontimeout:() => finish({status:0}),
+                    onabort:() => finish({status:0, cancelled:true})});
+            } catch (_) { finish({status:0}); }
+        });
+    }
+    async function diagnoseAudioFailure(media) {
+        const file = currentSfFile;
+        const serial = requestSerial;
+        const notice = playbackNotice;
+        const epoch = audioDiagnosticEpoch;
+        if (!file || !notice || media !== audio) return;
+        const now = Date.now();
+        let cached = audioDiagnostics.get(file);
+        if (!cached || now - cached.time >= 60000) {
+            if (audioDiagnostics.size >= 100) audioDiagnostics.delete(audioDiagnostics.keys().next().value);
+            const promise = (async () => {
+                const stream = await requestAudioDiagnostic(getStreamUrl(file), 'HEAD');
+                if (stream.cancelled || epoch !== audioDiagnosticEpoch) return {status:0, cancelled:true};
+                if (stream.status === 404 || stream.status === 410) return stream;
+                // The download page can return a different status from the stream.
+                const page = await requestAudioDiagnostic(getDownloadUrl(file), 'GET');
+                if (page.status === 404 || page.status === 410) return {...page, sfPage:true};
+                if (page.challenge) return page;
+                if (stream.challenge) return stream;
+                if (stream.status >= 400 && ![405,501].includes(stream.status)) return stream;
+                if (page.status >= 400) return {...page, sfPage:true};
+                return {status:0};
+            })();
+            cached = {time:now, promise, done:false};
+            const entry = cached;
+            void promise.then(() => { entry.done = true; });
+            audioDiagnostics.set(file, cached);
         }
+        const diagnostic = await cached.promise;
+        if (diagnostic.cancelled || epoch !== audioDiagnosticEpoch || serial !== requestSerial || file !== currentSfFile || media !== audio
+            || playbackNotice !== notice || !media.error) return;
+        if (diagnostic.challenge) showPlaybackNotice({challenge:true});
+        else if (diagnostic.status >= 400 && diagnostic.status <= 599) {
+            showPlaybackNotice({httpStatus:diagnostic.status, sfPage:diagnostic.sfPage});
+        } else {
+            showPlaybackNotice({mediaCode:media.error?.code});
+        }
+    }
+
+    function inlineNoticeBounds(panel, title, controls, viewportWidth, viewportHeight) {
+        const right = Math.min(panel.right, viewportWidth) - 100;
+        const left = Math.max(panel.left, Math.min(Math.max(panel.left, ...controls.map(r => r.right + 8)), right - 160));
+        const bottom = Math.min(viewportHeight - 2, Math.max(panel.bottom, ...controls.map(r => r.bottom)));
+        const top = Math.max(panel.top + 18, title && title.height > 0 ? title.bottom + 3 : panel.top + 18);
+        return {left, top, width:Math.max(0,right-left), height:Math.max(0,Math.min(40,bottom-top))};
     }
 
     function showPlaybackNotice(error) {
@@ -1620,19 +1718,14 @@ darsreza@gmail.com
         box.dataset.kind = error?.code === 'WAVE' ? 'wave' : 'audio';
         box.style.cssText = 'position:fixed;bottom:80px;left:16px;z-index:2147483000;max-width:min(460px,90vw);padding:14px;background:#fff;color:#222;border:1px solid #888;border-radius:6px;font:14px/1.5 sans-serif;box-shadow:0 2px 12px #0003';
         const text = document.createElement('div');
-        text.textContent = 'Аудио недоступно. Откройте Soundfiles: если сайт требует проверку, пройдите её, затем нажмите «Повторить». Возможна также ошибка самого файла или сети.';
+        text.textContent = error?.diagnosing
+            ? ''
+            : playbackErrorText(error, !currentSfFile);
         const link = document.createElement('a');
         link.textContent = currentSfFile ? 'Soundfiles' : 'Страница трека';
         link.href = currentSfFile ? getDownloadUrl(currentSfFile) : sameMirrorTrackUrl(getEntry(currentRow)?.href);
-        if (!currentSfFile) text.textContent = /HTTP 404/.test(error?.message || '')
-            ? 'Аудио недоступно: страница трека вернула ошибку 404.'
-            : /sffile/.test(error?.message || '')
-                ? 'Аудио недоступно: на странице нет поддерживаемой ссылки Soundfiles. Проверьте источник трека.'
-                : 'Аудио недоступно: не удалось загрузить страницу трека. Проверьте соединение или повторите попытку.';
         link.target = '_blank';
         link.rel = 'noopener noreferrer';
-        if (error?.code === 'WAVE') text.textContent = 'Волна трека не загрузилась — она может быть недоступна или ещё формироваться на Soundfiles; это не мешает воспроизведению аудио';
-        text.textContent = text.textContent.replace(/\.(?=\s|$)/g, ';').replace(/;$/, '');
         link.style.setProperty('color', '#fff', 'important');
         const retry = document.createElement('button');
         retry.type = 'button'; retry.textContent = 'Повторить'; retry.style.margin = '8px';
@@ -1659,17 +1752,69 @@ darsreza@gmail.com
             box.append(source);
         }
         if (!trackPageRow && scrubber) {
+            // Never change the containing block of the native absolute title.
             box.className = 'ct-inline-audio-notice';
-            box.style.cssText = 'position:absolute;inset:0;z-index:20;box-sizing:border-box;padding:5px 10px;background:#000;color:#eee;font:12px/1.3 Arial,sans-serif;display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:4px 10px;overflow:auto;text-indent:0';
-            text.style.cssText = 'flex:1 1 260px;white-space:normal';
-            for (const control of box.querySelectorAll('a,button')) control.style.cssText = 'font:inherit;color:#fff!important;background:#3a3a3a;border:1px solid #777;border-radius:3px;padding:3px 7px;text-decoration:none;cursor:pointer;white-space:nowrap';
-            if (getComputedStyle(scrubber).position === 'static') {
-                noticePositionRestore = {node:scrubber, value:scrubber.style.getPropertyValue('position'), priority:scrubber.style.getPropertyPriority('position')};
-                scrubber.style.position = 'relative';
+            box.style.cssText = 'position:absolute;z-index:20;box-sizing:border-box;padding:2px 8px;background:#000;color:#eee;font:12px/1.3 Arial,sans-serif;display:flex;align-items:center;justify-content:space-between;gap:16px;overflow:auto;text-indent:0';
+            text.style.cssText = 'flex:1 1 0;min-width:0;max-height:100%;overflow:auto;margin:0;padding:0;white-space:normal;overflow-wrap:anywhere;line-height:1.3';
+            const actions = document.createElement('div');
+            actions.className = 'ct-notice-actions';
+            actions.style.cssText = 'display:flex;flex:0 0 auto;align-items:center;gap:8px;margin:0;padding:0';
+            for (const control of box.querySelectorAll('a,button')) {
+                control.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;float:none;position:static;flex:0 0 auto;font:12px/1.3 Arial,sans-serif;color:#fff!important;background:#3a3a3a;border:1px solid #777;border-radius:3px;padding:3px 7px;margin:0;text-decoration:none;cursor:pointer;white-space:nowrap';
+                actions.append(control);
             }
+            box.append(actions);
+            // The outer player and scrubber can have zero height (floated children).
+            // Use the visible controls panel, outside the clipped waveform ancestors.
+            const panel = player.querySelector('.pt-controls-wrapper') || player;
+            const controls = [...player.querySelectorAll('#pimg,.pt-previous,.pt-play-pause,.pt-next,.pt-dl,.pt-st')];
+            const timeLabel = player.querySelector('.pt-time');
+            const timeZ = timeLabel?.style.getPropertyValue('z-index');
+            const timeZPriority = timeLabel?.style.getPropertyPriority('z-index');
+            timeLabel?.style.setProperty('z-index', '21', 'important');
+            const layout = () => {
+                const bounds = inlineNoticeBounds(panel.getBoundingClientRect(), currentTitle?.getBoundingClientRect(),
+                    controls.map(node => node.getBoundingClientRect()).filter(rect => rect.width > 0), document.documentElement.clientWidth, window.innerHeight);
+                // Reserve the real clock rectangle, including long durations and zoom.
+                const clockRect = timeLabel?.getBoundingClientRect();
+                if (clockRect && clockRect.width > 0 && clockRect.left > bounds.left) {
+                    bounds.width = Math.max(0, Math.min(bounds.width, clockRect.left - bounds.left - 12));
+                }
+                // Align the notice with the playback controls, not with title height.
+                const playRect = player.querySelector('.pt-play-pause')?.getBoundingClientRect();
+                if (playRect && playRect.height > 0) {
+                    const panelRect = panel.getBoundingClientRect();
+                    const center = (playRect.top + playRect.bottom) / 2;
+                    const availableBottom = Math.min(window.innerHeight - 2, Math.max(panelRect.bottom, playRect.bottom));
+                    bounds.top = Math.max(panelRect.top, center - 20);
+                    bounds.height = Math.max(0, Math.min(40, availableBottom - bounds.top));
+                }
+                const parent = box.offsetParent;
+                if (!parent) return; // Hidden ancestor: wait for a measurable layout.
+                const origin = parent.getBoundingClientRect();
+                box.style.left = (bounds.left-origin.left) + 'px';
+                box.style.top = (bounds.top-origin.top) + 'px';
+                box.style.width = bounds.width + 'px';
+                box.style.height = bounds.height + 'px';
+            };
             for (const type of ['click','mousedown','mouseup','pointerdown']) box.addEventListener(type, event => event.stopPropagation());
-            scrubber.append(box);
-            player.style.bottom = '0px';
+            panel.append(box);
+            layout();
+            const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(layout) : null;
+            observer?.observe(panel);
+            if (timeLabel) observer?.observe(timeLabel);
+            if (currentTitle) observer?.observe(currentTitle);
+            window.addEventListener('resize', layout, {passive:true});
+            window.addEventListener('scroll', layout, {passive:true});
+            playbackNoticeCleanup = () => {
+                observer?.disconnect();
+                if (timeLabel) {
+                    if (timeZ) timeLabel.style.setProperty('z-index', timeZ, timeZPriority);
+                    else timeLabel.style.removeProperty('z-index');
+                }
+                window.removeEventListener('resize', layout);
+                window.removeEventListener('scroll', layout);
+            };
         } else if (trackPageRow) {
             // Temporary sibling: removing the notice restores the original layout.
             box.className = 'ct-track-audio-notice';
@@ -1679,6 +1824,12 @@ darsreza@gmail.com
             player.after(box);
         } else document.body.append(box);
         playbackNotice = box;
+        if (error?.diagnosing) {
+            // Keep the box measurable while waiting: display:none loses offsetParent.
+            box.style.setProperty('visibility', 'hidden', 'important');
+            box.style.setProperty('pointer-events', 'none', 'important');
+
+        }
     }
 
     const streamRecoveryTimes = new Map();
@@ -1749,6 +1900,7 @@ darsreza@gmail.com
         // Repeated clicks during page resolution must not replay old audio.
         if (currentIndex === index && userTrackLoading && !currentSfFile) return;
 
+        cancelAudioDiagnostics();
         hidePlaybackNotice();
         const row =
             rows[index];
@@ -1971,7 +2123,11 @@ darsreza@gmail.com
             resetRowButton(button);
             if (button) button.title = 'Аудио недоступно — попытка отмечена в истории';
             playerPlay?.classList.remove('pt-playing');
-            showPlaybackNotice(error);
+            showPlaybackNotice(currentSfFile && audio?.error
+                ? {diagnosing:true} : error);
+            // play() rejection can replace the notice created by the media error
+            // event. Attach the same cached/in-flight diagnosis to this notice too.
+            if (currentSfFile && audio?.error) void diagnoseAudioFailure(audio);
 
             warn(
                 'Ошибка запуска трека:',
@@ -2496,6 +2652,7 @@ darsreza@gmail.com
                 }
 
                 if (media.paused || media.error) return;
+                cancelAudioDiagnostics();
                 syncTrackVinyl(true);
                 soundfilesFailed = false;
                 hidePlaybackNotice();
@@ -2637,7 +2794,8 @@ darsreza@gmail.com
                 stopProgressLoop();
                 soundfilesFailed = true;
                 trimAudioWarmCache(new Set());
-                showPlaybackNotice();
+                showPlaybackNotice({mediaCode:media.error?.code, diagnosing:!!currentSfFile});
+                void diagnoseAudioFailure(media);
                 void recoverFailedStream(media);
                 warn(
                     'HTMLAudioElement error:',
@@ -3607,6 +3765,15 @@ darsreza@gmail.com
             player.querySelector(
                 '.pt-current-track-title'
             );
+
+        // Keep the full text line above the error overlay without moving its anchor.
+        if (!trackPageRow && currentTitle) {
+            currentTitle.style.setProperty('line-height', '18px', 'important');
+            currentTitle.style.setProperty('height', 'auto', 'important');
+            currentTitle.style.setProperty('min-height', '18px', 'important');
+            currentTitle.style.setProperty('padding-bottom', '2px', 'important');
+            currentTitle.style.setProperty('z-index', '22', 'important');
+        }
 
         currentTime =
             player.querySelector(
