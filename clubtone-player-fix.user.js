@@ -4,7 +4,7 @@
 // @copyright    2026 Dmitriy Oshev
 // @license      LicenseRef-Clubtone-Personal-Use
 // @namespace    clubtone-player-fix
-// @version      1.5.35
+// @version      1.5.36
 // @homepageURL  https://github.com/Emparda/clubtone-top-player-fix
 // @supportURL   https://github.com/Emparda/clubtone-top-player-fix/issues
 // @updateURL    https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix.meta.js
@@ -56,7 +56,7 @@ darsreza@gmail.com
 (function () {
     'use strict';
 
-    const VERSION = '1.5.35';
+    const VERSION = '1.5.36';
 
     // Project attribution: Dmitriy Oshev; created with Codex GPT.
     // Creation date supplied by the author: 2026-10-02.
@@ -2036,6 +2036,9 @@ darsreza@gmail.com
             if (button) button.title = 'Аудио недоступно — попытка отмечена в истории';
             playerPlay?.classList.remove('pt-playing');
             showPlaybackNotice(error);
+            // play() rejection can replace the notice created by the media error
+            // event. Attach the same cached/in-flight diagnosis to this notice too.
+            if (currentSfFile && audio?.error) void diagnoseAudioFailure(audio);
 
             warn(
                 'Ошибка запуска трека:',
