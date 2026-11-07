@@ -1707,7 +1707,7 @@ darsreza@gmail.com
         const right = Math.min(panel.right, viewportWidth);
         const left = Math.max(panel.left, Math.min(Math.max(panel.left, ...controls.map(r => r.right + 8)), right - 160));
         const bottom = Math.min(viewportHeight - 2, Math.max(panel.bottom, ...controls.map(r => r.bottom)));
-        const top = Math.max(panel.top, Math.min(panel.top + 22, bottom - 32));
+        const top = Math.max(panel.top, Math.min(panel.top + 16, bottom - 40));
         return {left, top, width:Math.max(0,right-left), height:Math.max(0,Math.min(40,bottom-top))};
     }
 
@@ -1756,9 +1756,16 @@ darsreza@gmail.com
         if (!trackPageRow && scrubber) {
             // Never change the containing block of the native absolute title.
             box.className = 'ct-inline-audio-notice';
-            box.style.cssText = 'position:absolute;z-index:20;box-sizing:border-box;padding:3px 8px;background:#000;color:#eee;font:12px/1.3 Arial,sans-serif;display:flex;align-items:center;flex-wrap:wrap;gap:3px 8px;overflow:auto;text-indent:0';
-            text.style.cssText = 'flex:1 1 220px;white-space:normal';
-            for (const control of box.querySelectorAll('a,button')) control.style.cssText = 'font:inherit;color:#fff!important;background:#3a3a3a;border:1px solid #777;border-radius:3px;padding:3px 7px;text-decoration:none;cursor:pointer;white-space:nowrap';
+            box.style.cssText = 'position:absolute;z-index:20;box-sizing:border-box;padding:2px 8px;background:#000;color:#eee;font:12px/1.3 Arial,sans-serif;display:flex;align-items:center;justify-content:center;gap:12px;overflow:auto;text-indent:0';
+            text.style.cssText = 'flex:0 1 auto;min-width:0;margin:0;padding:0;white-space:normal;overflow-wrap:anywhere;line-height:1.3';
+            const actions = document.createElement('div');
+            actions.className = 'ct-notice-actions';
+            actions.style.cssText = 'display:flex;flex:0 0 auto;align-items:center;gap:8px;margin:0;padding:0';
+            for (const control of box.querySelectorAll('a,button')) {
+                control.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;float:none;position:static;flex:0 0 auto;font:12px/1.3 Arial,sans-serif;color:#fff!important;background:#3a3a3a;border:1px solid #777;border-radius:3px;padding:3px 7px;margin:0;text-decoration:none;cursor:pointer;white-space:nowrap';
+                actions.append(control);
+            }
+            box.append(actions);
             // The outer player and scrubber can have zero height (floated children).
             // Use the visible controls panel, outside the clipped waveform ancestors.
             const panel = player.querySelector('.pt-controls-wrapper') || player;
