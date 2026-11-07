@@ -1597,7 +1597,6 @@ darsreza@gmail.com
     let currentSourceUrl = null;
     let playbackNotice = null;
     let playbackNoticeTimer = null;
-    let noticePositionRestore = null;
     let soundfilesFailed = false;
 
     function hidePlaybackNotice() {
@@ -1605,12 +1604,7 @@ darsreza@gmail.com
         playbackNoticeTimer = null;
         playbackNotice?.remove();
         playbackNotice = null;
-        if (noticePositionRestore) {
-            const {node, value, priority} = noticePositionRestore;
-            if (value) node.style.setProperty('position', value, priority);
-            else node.style.removeProperty('position');
-            noticePositionRestore = null;
-        }
+
     }
 
     function playbackErrorText(error, page = false) {
@@ -1639,23 +1633,39 @@ darsreza@gmail.com
     }
 
     const audioDiagnostics = new Map();
+    const activeAudioDiagnostics = new Set();
+    let audioDiagnosticEpoch = 0;
+    function cancelAudioDiagnostics() {
+        audioDiagnosticEpoch++;
+        for (const cancel of [...activeAudioDiagnostics]) cancel();
+        for (const [key, entry] of audioDiagnostics) if (!entry.done) audioDiagnostics.delete(key);
+    }
     function requestAudioDiagnostic(url, method) {
         return new Promise(resolve => {
+            let request, settled = false;
+            const finish = value => {
+                if (settled) return;
+                settled = true;
+                activeAudioDiagnostics.delete(cancel);
+                resolve(value);
+            };
+            const cancel = () => { finish({status:0, cancelled:true}); try { request?.abort(); } catch (_) {} };
+            activeAudioDiagnostics.add(cancel);
             try {
-                let request;
                 request = GM_xmlhttpRequest({method, url, timeout:10000,
-                    onload:r => resolve({status:Number(r.status) || 0,
+                    onload:r => finish({status:Number(r.status) || 0,
                         challenge:/^cf-mitigated:\s*challenge\s*$/im.test(r.responseHeaders || '')}),
-                    onprogress:r => { if (r.loaded > 512 * 1024) { resolve({status:0}); request?.abort(); } },
-                    onerror:() => resolve({status:0}), ontimeout:() => resolve({status:0}),
-                    onabort:() => resolve({status:0})});
-            } catch (_) { resolve({status:0}); }
+                    onprogress:r => { if (r.loaded > 512 * 1024) cancel(); },
+                    onerror:() => finish({status:0}), ontimeout:() => finish({status:0}),
+                    onabort:() => finish({status:0, cancelled:true})});
+            } catch (_) { finish({status:0}); }
         });
     }
     async function diagnoseAudioFailure(media) {
         const file = currentSfFile;
         const serial = requestSerial;
         const notice = playbackNotice;
+        const epoch = audioDiagnosticEpoch;
         if (!file || !notice || media !== audio) return;
         const now = Date.now();
         let cached = audioDiagnostics.get(file);
@@ -1663,6 +1673,7 @@ darsreza@gmail.com
             if (audioDiagnostics.size >= 100) audioDiagnostics.delete(audioDiagnostics.keys().next().value);
             const promise = (async () => {
                 const stream = await requestAudioDiagnostic(getStreamUrl(file), 'HEAD');
+                if (stream.cancelled || epoch !== audioDiagnosticEpoch) return {status:0, cancelled:true};
                 if (stream.status === 404 || stream.status === 410) return stream;
                 // The download page can return a different status from the stream.
                 const page = await requestAudioDiagnostic(getDownloadUrl(file), 'GET');
@@ -1673,11 +1684,13 @@ darsreza@gmail.com
                 if (page.status >= 400) return {...page, sfPage:true};
                 return {status:0};
             })();
-            cached = {time:now, promise};
+            cached = {time:now, promise, done:false};
+            const entry = cached;
+            void promise.then(() => { entry.done = true; });
             audioDiagnostics.set(file, cached);
         }
         const diagnostic = await cached.promise;
-        if (serial !== requestSerial || file !== currentSfFile || media !== audio
+        if (diagnostic.cancelled || epoch !== audioDiagnosticEpoch || serial !== requestSerial || file !== currentSfFile || media !== audio
             || playbackNotice !== notice || !media.error) return;
         if (diagnostic.challenge) showPlaybackNotice({challenge:true});
         else if (diagnostic.status >= 400 && diagnostic.status <= 599) {
@@ -1730,17 +1743,14 @@ darsreza@gmail.com
             box.append(source);
         }
         if (!trackPageRow && scrubber) {
+            // Keep the waveform's positioning context unchanged: the native
+            // absolute title must neither jump nor be covered by the notice.
             box.className = 'ct-inline-audio-notice';
-            box.style.cssText = 'position:absolute;inset:0;z-index:20;box-sizing:border-box;padding:5px 10px;background:#000;color:#eee;font:12px/1.3 Arial,sans-serif;display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:4px 10px;overflow:auto;text-indent:0';
+            box.style.cssText = 'position:fixed;left:16px;right:16px;z-index:2147483000;box-sizing:border-box;padding:8px 10px;background:#000;color:#eee;font:12px/1.3 Arial,sans-serif;display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px;max-height:35vh;overflow:auto;text-indent:0';
+            box.style.bottom = Math.max(0, window.innerHeight - player.getBoundingClientRect().top) + 'px';
             text.style.cssText = 'flex:1 1 260px;white-space:normal';
             for (const control of box.querySelectorAll('a,button')) control.style.cssText = 'font:inherit;color:#fff!important;background:#3a3a3a;border:1px solid #777;border-radius:3px;padding:3px 7px;text-decoration:none;cursor:pointer;white-space:nowrap';
-            if (getComputedStyle(scrubber).position === 'static') {
-                noticePositionRestore = {node:scrubber, value:scrubber.style.getPropertyValue('position'), priority:scrubber.style.getPropertyPriority('position')};
-                scrubber.style.position = 'relative';
-            }
-            for (const type of ['click','mousedown','mouseup','pointerdown']) box.addEventListener(type, event => event.stopPropagation());
-            scrubber.append(box);
-            player.style.bottom = '0px';
+            document.body.append(box);
         } else if (trackPageRow) {
             // Temporary sibling: removing the notice restores the original layout.
             box.className = 'ct-track-audio-notice';
@@ -1830,6 +1840,7 @@ darsreza@gmail.com
         // Repeated clicks during page resolution must not replay old audio.
         if (currentIndex === index && userTrackLoading && !currentSfFile) return;
 
+        cancelAudioDiagnostics();
         hidePlaybackNotice();
         const row =
             rows[index];
@@ -2581,6 +2592,7 @@ darsreza@gmail.com
                 }
 
                 if (media.paused || media.error) return;
+                cancelAudioDiagnostics();
                 syncTrackVinyl(true);
                 soundfilesFailed = false;
                 hidePlaybackNotice();
