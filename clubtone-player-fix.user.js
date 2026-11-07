@@ -1596,15 +1596,12 @@ darsreza@gmail.com
 
     let currentSourceUrl = null;
     let playbackNotice = null;
-    let playbackNoticeTimer = null;
     let playbackNoticeCleanup = null;
     let soundfilesFailed = false;
 
     function hidePlaybackNotice() {
         playbackNoticeCleanup?.();
         playbackNoticeCleanup = null;
-        clearTimeout(playbackNoticeTimer);
-        playbackNoticeTimer = null;
         playbackNotice?.remove();
         playbackNotice = null;
 
@@ -1721,7 +1718,7 @@ darsreza@gmail.com
         box.style.cssText = 'position:fixed;bottom:80px;left:16px;z-index:2147483000;max-width:min(460px,90vw);padding:14px;background:#fff;color:#222;border:1px solid #888;border-radius:6px;font:14px/1.5 sans-serif;box-shadow:0 2px 12px #0003';
         const text = document.createElement('div');
         text.textContent = error?.diagnosing
-            ? 'Уточняем причину недоступности аудио'
+            ? ''
             : playbackErrorText(error, !currentSfFile);
         const link = document.createElement('a');
         link.textContent = currentSfFile ? 'Soundfiles' : 'Страница трека';
@@ -1830,12 +1827,7 @@ darsreza@gmail.com
             // Keep the box measurable while waiting: display:none loses offsetParent.
             box.style.setProperty('visibility', 'hidden', 'important');
             box.style.setProperty('pointer-events', 'none', 'important');
-            playbackNoticeTimer = setTimeout(() => {
-                playbackNoticeTimer = null;
-                if (playbackNotice !== box) return;
-                box.style.removeProperty('visibility');
-                box.style.removeProperty('pointer-events');
-            }, 500);
+
         }
     }
 
