@@ -1611,7 +1611,7 @@ darsreza@gmail.com
     }
 
     function playbackErrorText(error, page = false) {
-        if (error?.code === 'WAVE') return 'Волна трека не загрузилась — она может быть недоступна или ещё формироваться на Soundfiles; это не мешает воспроизведению аудио';
+        if (error?.code === 'WAVE') return 'Волна недоступна или ещё формируется на Soundfiles — аудио можно слушать';
         if (error?.challenge === true) return 'Аудио недоступно — откройте Soundfiles, пройдите проверку и нажмите «Повторить»';
         const message = String(error?.message || '');
         const status = Number(error?.httpStatus || message.match(/HTTP (\d{3})\b/)?.[1] || 0);
