@@ -1703,12 +1703,12 @@ darsreza@gmail.com
         }
     }
 
-    function inlineNoticeBounds(panel, title, controls, viewportWidth) {
+    function inlineNoticeBounds(panel, title, controls, viewportWidth, viewportHeight) {
         const right = Math.min(panel.right, viewportWidth);
-        const left = Math.min(Math.max(panel.left, ...controls.map(r => r.right + 8)), right - 160);
-        const top = Math.max(panel.top, title && title.height > 0 ? title.bottom + 2 : panel.top);
-        const bottom = Math.max(panel.bottom, ...controls.map(r => r.bottom + 4));
-        return {left:Math.max(panel.left, left), top, width:Math.max(0, right-Math.max(panel.left,left)), height:Math.max(28,bottom-top)};
+        const left = Math.max(panel.left, Math.min(Math.max(panel.left, ...controls.map(r => r.right + 8)), right - 160));
+        const bottom = Math.min(viewportHeight - 2, Math.max(panel.bottom, ...controls.map(r => r.bottom)));
+        const top = Math.max(panel.top, Math.min(panel.top + 22, bottom - 32));
+        return {left, top, width:Math.max(0,right-left), height:Math.max(0,Math.min(40,bottom-top))};
     }
 
     function showPlaybackNotice(error) {
@@ -1765,8 +1765,10 @@ darsreza@gmail.com
             const controls = [...player.querySelectorAll('#pimg,.pt-previous,.pt-play-pause,.pt-next,.pt-dl,.pt-st')];
             const layout = () => {
                 const bounds = inlineNoticeBounds(panel.getBoundingClientRect(), currentTitle?.getBoundingClientRect(),
-                    controls.map(node => node.getBoundingClientRect()).filter(rect => rect.width > 0), document.documentElement.clientWidth);
-                const origin = box.offsetParent?.getBoundingClientRect() || {left:0,top:0};
+                    controls.map(node => node.getBoundingClientRect()).filter(rect => rect.width > 0), document.documentElement.clientWidth, window.innerHeight);
+                const parent = box.offsetParent;
+                if (!parent) return; // Hidden ancestor: wait for a measurable layout.
+                const origin = parent.getBoundingClientRect();
                 box.style.left = (bounds.left-origin.left) + 'px';
                 box.style.top = (bounds.top-origin.top) + 'px';
                 box.style.width = bounds.width + 'px';
@@ -1794,13 +1796,14 @@ darsreza@gmail.com
         } else document.body.append(box);
         playbackNotice = box;
         if (error?.diagnosing) {
-            const display = box.style.getPropertyValue('display');
-            box.style.setProperty('display', 'none', 'important');
+            // Keep the box measurable while waiting: display:none loses offsetParent.
+            box.style.setProperty('visibility', 'hidden', 'important');
+            box.style.setProperty('pointer-events', 'none', 'important');
             playbackNoticeTimer = setTimeout(() => {
                 playbackNoticeTimer = null;
                 if (playbackNotice !== box) return;
-                if (display) box.style.setProperty('display', display);
-                else box.style.removeProperty('display');
+                box.style.removeProperty('visibility');
+                box.style.removeProperty('pointer-events');
             }, 500);
         }
     }
