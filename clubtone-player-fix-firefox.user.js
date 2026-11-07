@@ -1767,6 +1767,20 @@ darsreza@gmail.com
             // The outer player and scrubber can have zero height (floated children).
             // Use the visible controls panel, outside the clipped waveform ancestors.
             const panel = player.querySelector('.pt-controls-wrapper') || player;
+            // The native transparency mode and waveform can show through the
+            // space around the notice. Override them only while it is present.
+            const noticeBackdropStyle = document.createElement('style');
+            noticeBackdropStyle.textContent = `
+                #pageplayer.ct-notice-opaque {opacity:1!important;}
+                #pageplayer.ct-notice-opaque .pt-controls-wrapper,
+                #pageplayer.ct-notice-opaque .pt-controls,
+                #pageplayer.ct-notice-opaque .pt-scrubber {
+                    background:#000!important;opacity:1!important;
+                }
+                #pageplayer.ct-notice-opaque .pt-statusbar {visibility:hidden!important;}
+            `;
+            (document.head || document.documentElement).append(noticeBackdropStyle);
+            player.classList.add('ct-notice-opaque');
             const controls = [...player.querySelectorAll('#pimg,.pt-previous,.pt-play-pause,.pt-next,.pt-dl,.pt-st')];
             const timeLabel = player.querySelector('.pt-time');
             const timeZ = timeLabel?.style.getPropertyValue('z-index');
@@ -1807,6 +1821,8 @@ darsreza@gmail.com
             window.addEventListener('resize', layout, {passive:true});
             window.addEventListener('scroll', layout, {passive:true});
             playbackNoticeCleanup = () => {
+                noticeBackdropStyle.remove();
+                player.classList.remove('ct-notice-opaque');
                 observer?.disconnect();
                 if (timeLabel) {
                     if (timeZ) timeLabel.style.setProperty('z-index', timeZ, timeZPriority);
