@@ -1782,6 +1782,15 @@ darsreza@gmail.com
                 if (clockRect && clockRect.width > 0 && clockRect.left > bounds.left) {
                     bounds.width = Math.max(0, Math.min(bounds.width, clockRect.left - bounds.left - 12));
                 }
+                // Align the notice with the playback controls, not with title height.
+                const playRect = player.querySelector('.pt-play-pause')?.getBoundingClientRect();
+                if (playRect && playRect.height > 0) {
+                    const panelRect = panel.getBoundingClientRect();
+                    const center = (playRect.top + playRect.bottom) / 2;
+                    const availableBottom = Math.min(window.innerHeight - 2, Math.max(panelRect.bottom, playRect.bottom));
+                    bounds.top = Math.max(panelRect.top, center - 20);
+                    bounds.height = Math.max(0, Math.min(40, availableBottom - bounds.top));
+                }
                 const parent = box.offsetParent;
                 if (!parent) return; // Hidden ancestor: wait for a measurable layout.
                 const origin = parent.getBoundingClientRect();
