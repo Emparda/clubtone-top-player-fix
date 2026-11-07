@@ -1704,10 +1704,10 @@ darsreza@gmail.com
     }
 
     function inlineNoticeBounds(panel, title, controls, viewportWidth, viewportHeight) {
-        const right = Math.min(panel.right, viewportWidth);
+        const right = Math.min(panel.right, viewportWidth) - 100;
         const left = Math.max(panel.left, Math.min(Math.max(panel.left, ...controls.map(r => r.right + 8)), right - 160));
         const bottom = Math.min(viewportHeight - 2, Math.max(panel.bottom, ...controls.map(r => r.bottom)));
-        const top = Math.max(panel.top, Math.min(panel.top + 16, bottom - 40));
+        const top = Math.max(panel.top + 18, title && title.height > 0 ? title.bottom + 3 : panel.top + 18);
         return {left, top, width:Math.max(0,right-left), height:Math.max(0,Math.min(40,bottom-top))};
     }
 
@@ -1756,8 +1756,8 @@ darsreza@gmail.com
         if (!trackPageRow && scrubber) {
             // Never change the containing block of the native absolute title.
             box.className = 'ct-inline-audio-notice';
-            box.style.cssText = 'position:absolute;z-index:20;box-sizing:border-box;padding:2px 8px;background:#000;color:#eee;font:12px/1.3 Arial,sans-serif;display:flex;align-items:center;justify-content:center;gap:12px;overflow:auto;text-indent:0';
-            text.style.cssText = 'flex:0 1 auto;min-width:0;margin:0;padding:0;white-space:normal;overflow-wrap:anywhere;line-height:1.3';
+            box.style.cssText = 'position:absolute;z-index:20;box-sizing:border-box;padding:2px 8px;background:#000;color:#eee;font:12px/1.3 Arial,sans-serif;display:flex;align-items:center;justify-content:space-between;gap:16px;overflow:auto;text-indent:0';
+            text.style.cssText = 'flex:1 1 0;min-width:0;max-height:100%;overflow:auto;margin:0;padding:0;white-space:normal;overflow-wrap:anywhere;line-height:1.3';
             const actions = document.createElement('div');
             actions.className = 'ct-notice-actions';
             actions.style.cssText = 'display:flex;flex:0 0 auto;align-items:center;gap:8px;margin:0;padding:0';
@@ -1770,9 +1770,18 @@ darsreza@gmail.com
             // Use the visible controls panel, outside the clipped waveform ancestors.
             const panel = player.querySelector('.pt-controls-wrapper') || player;
             const controls = [...player.querySelectorAll('#pimg,.pt-previous,.pt-play-pause,.pt-next,.pt-dl,.pt-st')];
+            const timeLabel = player.querySelector('.pt-time');
+            const timeZ = timeLabel?.style.getPropertyValue('z-index');
+            const timeZPriority = timeLabel?.style.getPropertyPriority('z-index');
+            timeLabel?.style.setProperty('z-index', '21', 'important');
             const layout = () => {
                 const bounds = inlineNoticeBounds(panel.getBoundingClientRect(), currentTitle?.getBoundingClientRect(),
                     controls.map(node => node.getBoundingClientRect()).filter(rect => rect.width > 0), document.documentElement.clientWidth, window.innerHeight);
+                // Reserve the real clock rectangle, including long durations and zoom.
+                const clockRect = timeLabel?.getBoundingClientRect();
+                if (clockRect && clockRect.width > 0 && clockRect.left > bounds.left) {
+                    bounds.width = Math.max(0, Math.min(bounds.width, clockRect.left - bounds.left - 12));
+                }
                 const parent = box.offsetParent;
                 if (!parent) return; // Hidden ancestor: wait for a measurable layout.
                 const origin = parent.getBoundingClientRect();
@@ -1786,10 +1795,16 @@ darsreza@gmail.com
             layout();
             const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(layout) : null;
             observer?.observe(panel);
+            if (timeLabel) observer?.observe(timeLabel);
+            if (currentTitle) observer?.observe(currentTitle);
             window.addEventListener('resize', layout, {passive:true});
             window.addEventListener('scroll', layout, {passive:true});
             playbackNoticeCleanup = () => {
                 observer?.disconnect();
+                if (timeLabel) {
+                    if (timeZ) timeLabel.style.setProperty('z-index', timeZ, timeZPriority);
+                    else timeLabel.style.removeProperty('z-index');
+                }
                 window.removeEventListener('resize', layout);
                 window.removeEventListener('scroll', layout);
             };
@@ -3685,6 +3700,15 @@ darsreza@gmail.com
             player.querySelector(
                 '.pt-current-track-title'
             );
+
+        // Keep the full text line above the error overlay without moving its anchor.
+        if (!trackPageRow && currentTitle) {
+            currentTitle.style.setProperty('line-height', '18px', 'important');
+            currentTitle.style.setProperty('height', 'auto', 'important');
+            currentTitle.style.setProperty('min-height', '18px', 'important');
+            currentTitle.style.setProperty('padding-bottom', '2px', 'important');
+            currentTitle.style.setProperty('z-index', '22', 'important');
+        }
 
         currentTime =
             player.querySelector(
