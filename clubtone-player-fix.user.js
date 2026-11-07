@@ -1610,6 +1610,58 @@ darsreza@gmail.com
         }
     }
 
+    function playbackErrorText(error, page = false) {
+        if (error?.code === 'WAVE') return 'Волна трека не загрузилась — она может быть недоступна или ещё формироваться на Soundfiles; это не мешает воспроизведению аудио';
+        if (error?.challenge === true) return 'Аудио недоступно — откройте Soundfiles, пройдите проверку и нажмите «Повторить»';
+        const message = String(error?.message || '');
+        const status = Number(error?.httpStatus || message.match(/HTTP (\d{3})\b/)?.[1] || 0);
+        const subject = page ? 'страницу трека' : 'аудио';
+        const names = {400:'Bad Request',401:'Unauthorized',403:'Forbidden',404:'Not Found',408:'Request Timeout',410:'Gone',429:'Too Many Requests',500:'Internal Server Error',502:'Bad Gateway',503:'Service Unavailable',504:'Gateway Timeout'};
+        const label = status + (names[status] ? ' ' + names[status] : '');
+        if (status === 404) return page ? 'Страница трека не найдена — ошибка 404 Not Found' : 'Аудио недоступно — ошибка 404 Not Found';
+        if (status === 403) return 'Доступ к ' + (page ? 'странице трека' : 'аудио') + ' запрещён — ошибка 403 Forbidden';
+        if (status === 429) return 'Слишком много запросов — ошибка 429 Too Many Requests; повторите попытку позже';
+        if (status >= 500 && status <= 599) return 'Ошибка сервера — ' + label + '; повторите попытку позже';
+        if (status >= 400 && status <= 599) return 'Не удалось загрузить ' + subject + ' — ошибка ' + label;
+        if (/sffile/.test(message)) return 'Аудио недоступно — на странице нет поддерживаемой ссылки Soundfiles';
+        if (error?.name === 'NotAllowedError') return 'Браузер заблокировал воспроизведение — нажмите кнопку Play';
+        if (/Timeout/i.test(message)) return 'Не удалось загрузить ' + subject + ' — превышено время ожидания; нажмите «Повторить»';
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) return 'Нет подключения к сети — проверьте соединение и нажмите «Повторить»';
+        if (page) return 'Не удалось загрузить страницу трека — нажмите «Повторить»';
+        if (error?.mediaCode === 3) return 'Не удалось воспроизвести аудио — ошибка декодирования файла';
+        if (error?.mediaCode === 2 || /Network error/i.test(message)) return 'Не удалось загрузить аудио — ошибка соединения; нажмите «Повторить»';
+        // Media code 4 also occurs for missing uploads: do not assert a bad format.
+        return 'Аудио недоступно — откройте Soundfiles для проверки и нажмите «Повторить»';
+    }
+
+    const audioDiagnosticTimes = new Map();
+    async function diagnoseAudioFailure(media) {
+        const file = currentSfFile;
+        const serial = requestSerial;
+        const notice = playbackNotice;
+        if (!file || !notice || media !== audio) return;
+        const url = getStreamUrl(file);
+        const now = Date.now();
+        if (now - (audioDiagnosticTimes.get(url) || 0) < 60000) return;
+        if (audioDiagnosticTimes.size >= 100) audioDiagnosticTimes.delete(audioDiagnosticTimes.keys().next().value);
+        audioDiagnosticTimes.set(url, now);
+        // HEAD never downloads the audio body. Unsupported HEAD is inconclusive.
+        const diagnostic = await new Promise(resolve => {
+            try {
+                GM_xmlhttpRequest({method:'HEAD', url, timeout:10000,
+                    onload:r => resolve({status:Number(r.status) || 0, challenge:/^cf-mitigated:\s*challenge\s*$/im.test(r.responseHeaders || '')}),
+                    onerror:() => resolve(0), ontimeout:() => resolve(0), onabort:() => resolve(0)});
+            } catch (_) { resolve(0); }
+        });
+        if (serial !== requestSerial || file !== currentSfFile || media !== audio
+            || playbackNotice !== notice || !media.error) return;
+        const status = diagnostic?.status || 0;
+        if (diagnostic?.challenge) showPlaybackNotice({challenge:true});
+        else if (status >= 400 && status <= 599 && ![405,501].includes(status)) {
+            showPlaybackNotice({httpStatus:status});
+        }
+    }
+
     function showPlaybackNotice(error) {
         if (!player || !currentRow || (trackPageRow && !trackPagePlayRequested)) return;
         hidePlaybackNotice();
@@ -1619,19 +1671,12 @@ darsreza@gmail.com
         box.dataset.kind = error?.code === 'WAVE' ? 'wave' : 'audio';
         box.style.cssText = 'position:fixed;bottom:80px;left:16px;z-index:2147483000;max-width:min(460px,90vw);padding:14px;background:#fff;color:#222;border:1px solid #888;border-radius:6px;font:14px/1.5 sans-serif;box-shadow:0 2px 12px #0003';
         const text = document.createElement('div');
-        text.textContent = 'Аудио недоступно. Откройте Soundfiles: если сайт требует проверку, пройдите её, затем нажмите «Повторить». Возможна также ошибка самого файла или сети.';
+        text.textContent = playbackErrorText(error, !currentSfFile);
         const link = document.createElement('a');
         link.textContent = currentSfFile ? 'Soundfiles' : 'Страница трека';
         link.href = currentSfFile ? getDownloadUrl(currentSfFile) : sameMirrorTrackUrl(getEntry(currentRow)?.href);
-        if (!currentSfFile) text.textContent = /HTTP 404/.test(error?.message || '')
-            ? 'Аудио недоступно: страница трека вернула ошибку 404.'
-            : /sffile/.test(error?.message || '')
-                ? 'Аудио недоступно: на странице нет поддерживаемой ссылки Soundfiles. Проверьте источник трека.'
-                : 'Аудио недоступно: не удалось загрузить страницу трека. Проверьте соединение или повторите попытку.';
         link.target = '_blank';
         link.rel = 'noopener noreferrer';
-        if (error?.code === 'WAVE') text.textContent = 'Волна трека не загрузилась — она может быть недоступна или ещё формироваться на Soundfiles; это не мешает воспроизведению аудио';
-        text.textContent = text.textContent.replace(/\.(?=\s|$)/g, ';').replace(/;$/, '');
         link.style.setProperty('color', '#fff', 'important');
         const retry = document.createElement('button');
         retry.type = 'button'; retry.textContent = 'Повторить'; retry.style.margin = '8px';
@@ -2636,7 +2681,8 @@ darsreza@gmail.com
                 stopProgressLoop();
                 soundfilesFailed = true;
                 trimAudioWarmCache(new Set());
-                showPlaybackNotice();
+                showPlaybackNotice({mediaCode:media.error?.code});
+                void diagnoseAudioFailure(media);
                 void recoverFailedStream(media);
                 warn(
                     'HTMLAudioElement error:',
