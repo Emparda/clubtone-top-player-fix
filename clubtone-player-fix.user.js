@@ -1597,9 +1597,12 @@ darsreza@gmail.com
     let currentSourceUrl = null;
     let playbackNotice = null;
     let playbackNoticeTimer = null;
+    let playbackNoticeCleanup = null;
     let soundfilesFailed = false;
 
     function hidePlaybackNotice() {
+        playbackNoticeCleanup?.();
+        playbackNoticeCleanup = null;
         clearTimeout(playbackNoticeTimer);
         playbackNoticeTimer = null;
         playbackNotice?.remove();
@@ -1700,6 +1703,14 @@ darsreza@gmail.com
         }
     }
 
+    function inlineNoticeBounds(playerRect, waveRect, titleRect) {
+        const left = Math.max(playerRect.left, waveRect.left);
+        const right = Math.min(playerRect.right, waveRect.right);
+        const top = Math.min(playerRect.bottom, Math.max(playerRect.top, waveRect.top,
+            titleRect && titleRect.height > 0 ? titleRect.bottom + 2 : playerRect.top));
+        return {left, top, width:Math.max(0, right-left), height:Math.max(0, playerRect.bottom-top)};
+    }
+
     function showPlaybackNotice(error) {
         if (!player || !currentRow || (trackPageRow && !trackPagePlayRequested)) return;
         hidePlaybackNotice();
@@ -1743,14 +1754,28 @@ darsreza@gmail.com
             box.append(source);
         }
         if (!trackPageRow && scrubber) {
-            // Keep the waveform's positioning context unchanged: the native
-            // absolute title must neither jump nor be covered by the notice.
+            // Never change the containing block of the native absolute title.
             box.className = 'ct-inline-audio-notice';
-            box.style.cssText = 'position:fixed;left:16px;right:16px;z-index:2147483000;box-sizing:border-box;padding:8px 10px;background:#000;color:#eee;font:12px/1.3 Arial,sans-serif;display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px;max-height:35vh;overflow:auto;text-indent:0';
-            box.style.bottom = Math.max(0, window.innerHeight - player.getBoundingClientRect().top) + 'px';
-            text.style.cssText = 'flex:1 1 260px;white-space:normal';
+            box.style.cssText = 'position:fixed;z-index:20;box-sizing:border-box;padding:3px 8px;background:#000;color:#eee;font:12px/1.3 Arial,sans-serif;display:flex;align-items:center;flex-wrap:wrap;gap:3px 8px;overflow:auto;text-indent:0';
+            text.style.cssText = 'flex:1 1 220px;white-space:normal';
             for (const control of box.querySelectorAll('a,button')) control.style.cssText = 'font:inherit;color:#fff!important;background:#3a3a3a;border:1px solid #777;border-radius:3px;padding:3px 7px;text-decoration:none;cursor:pointer;white-space:nowrap';
-            document.body.append(box);
+            const layout = () => {
+                const bounds = inlineNoticeBounds(player.getBoundingClientRect(), scrubber.getBoundingClientRect(), currentTitle?.getBoundingClientRect());
+                for (const key of ['left','top','width','height']) box.style[key] = bounds[key] + 'px';
+            };
+            for (const type of ['click','mousedown','mouseup','pointerdown']) box.addEventListener(type, event => event.stopPropagation());
+            scrubber.append(box);
+            layout();
+            const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(layout) : null;
+            observer?.observe(player);
+            observer?.observe(scrubber);
+            window.addEventListener('resize', layout, {passive:true});
+            window.addEventListener('scroll', layout, {passive:true});
+            playbackNoticeCleanup = () => {
+                observer?.disconnect();
+                window.removeEventListener('resize', layout);
+                window.removeEventListener('scroll', layout);
+            };
         } else if (trackPageRow) {
             // Temporary sibling: removing the notice restores the original layout.
             box.className = 'ct-track-audio-notice';
