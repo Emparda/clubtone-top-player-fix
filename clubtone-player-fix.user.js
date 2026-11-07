@@ -1703,12 +1703,12 @@ darsreza@gmail.com
         }
     }
 
-    function inlineNoticeBounds(playerRect, waveRect, titleRect) {
-        const left = Math.max(playerRect.left, waveRect.left);
-        const right = Math.min(playerRect.right, waveRect.right);
-        const top = Math.min(playerRect.bottom, Math.max(playerRect.top, waveRect.top,
-            titleRect && titleRect.height > 0 ? titleRect.bottom + 2 : playerRect.top));
-        return {left, top, width:Math.max(0, right-left), height:Math.max(0, playerRect.bottom-top)};
+    function inlineNoticeBounds(panel, title, controls, viewportWidth) {
+        const right = Math.min(panel.right, viewportWidth);
+        const left = Math.min(Math.max(panel.left, ...controls.map(r => r.right + 8)), right - 160);
+        const top = Math.max(panel.top, title && title.height > 0 ? title.bottom + 2 : panel.top);
+        const bottom = Math.max(panel.bottom, ...controls.map(r => r.bottom + 4));
+        return {left:Math.max(panel.left, left), top, width:Math.max(0, right-Math.max(panel.left,left)), height:Math.max(28,bottom-top)};
     }
 
     function showPlaybackNotice(error) {
@@ -1756,19 +1756,27 @@ darsreza@gmail.com
         if (!trackPageRow && scrubber) {
             // Never change the containing block of the native absolute title.
             box.className = 'ct-inline-audio-notice';
-            box.style.cssText = 'position:fixed;z-index:20;box-sizing:border-box;padding:3px 8px;background:#000;color:#eee;font:12px/1.3 Arial,sans-serif;display:flex;align-items:center;flex-wrap:wrap;gap:3px 8px;overflow:auto;text-indent:0';
+            box.style.cssText = 'position:absolute;z-index:20;box-sizing:border-box;padding:3px 8px;background:#000;color:#eee;font:12px/1.3 Arial,sans-serif;display:flex;align-items:center;flex-wrap:wrap;gap:3px 8px;overflow:auto;text-indent:0';
             text.style.cssText = 'flex:1 1 220px;white-space:normal';
             for (const control of box.querySelectorAll('a,button')) control.style.cssText = 'font:inherit;color:#fff!important;background:#3a3a3a;border:1px solid #777;border-radius:3px;padding:3px 7px;text-decoration:none;cursor:pointer;white-space:nowrap';
+            // The outer player and scrubber can have zero height (floated children).
+            // Use the visible controls panel, outside the clipped waveform ancestors.
+            const panel = player.querySelector('.pt-controls-wrapper') || player;
+            const controls = [...player.querySelectorAll('#pimg,.pt-previous,.pt-play-pause,.pt-next,.pt-dl,.pt-st')];
             const layout = () => {
-                const bounds = inlineNoticeBounds(player.getBoundingClientRect(), scrubber.getBoundingClientRect(), currentTitle?.getBoundingClientRect());
-                for (const key of ['left','top','width','height']) box.style[key] = bounds[key] + 'px';
+                const bounds = inlineNoticeBounds(panel.getBoundingClientRect(), currentTitle?.getBoundingClientRect(),
+                    controls.map(node => node.getBoundingClientRect()).filter(rect => rect.width > 0), document.documentElement.clientWidth);
+                const origin = box.offsetParent?.getBoundingClientRect() || {left:0,top:0};
+                box.style.left = (bounds.left-origin.left) + 'px';
+                box.style.top = (bounds.top-origin.top) + 'px';
+                box.style.width = bounds.width + 'px';
+                box.style.height = bounds.height + 'px';
             };
             for (const type of ['click','mousedown','mouseup','pointerdown']) box.addEventListener(type, event => event.stopPropagation());
-            scrubber.append(box);
+            panel.append(box);
             layout();
             const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(layout) : null;
-            observer?.observe(player);
-            observer?.observe(scrubber);
+            observer?.observe(panel);
             window.addEventListener('resize', layout, {passive:true});
             window.addEventListener('scroll', layout, {passive:true});
             playbackNoticeCleanup = () => {
