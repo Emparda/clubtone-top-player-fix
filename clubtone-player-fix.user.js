@@ -1618,6 +1618,7 @@ darsreza@gmail.com
         const subject = page ? 'страницу трека' : 'аудио';
         const names = {400:'Bad Request',401:'Unauthorized',403:'Forbidden',404:'Not Found',408:'Request Timeout',410:'Gone',429:'Too Many Requests',500:'Internal Server Error',502:'Bad Gateway',503:'Service Unavailable',504:'Gateway Timeout'};
         const label = status + (names[status] ? ' ' + names[status] : '');
+        if (status === 404 && error?.sfPage) return 'Страница Soundfiles не найдена — ошибка 404 Not Found';
         if (status === 404) return page ? 'Страница трека не найдена — ошибка 404 Not Found' : 'Аудио недоступно — ошибка 404 Not Found';
         if (status === 403) return 'Доступ к ' + (page ? 'странице трека' : 'аудио') + ' запрещён — ошибка 403 Forbidden';
         if (status === 429) return 'Слишком много запросов — ошибка 429 Too Many Requests; повторите попытку позже';
@@ -1631,34 +1632,53 @@ darsreza@gmail.com
         if (error?.mediaCode === 3) return 'Не удалось воспроизвести аудио — ошибка декодирования файла';
         if (error?.mediaCode === 2 || /Network error/i.test(message)) return 'Не удалось загрузить аудио — ошибка соединения; нажмите «Повторить»';
         // Media code 4 also occurs for missing uploads: do not assert a bad format.
-        return 'Аудио недоступно — откройте Soundfiles для проверки и нажмите «Повторить»';
+        return 'Аудио недоступно — причину определить не удалось; откройте Soundfiles или нажмите «Повторить»';
     }
 
-    const audioDiagnosticTimes = new Map();
+    const audioDiagnostics = new Map();
+    function requestAudioDiagnostic(url, method) {
+        return new Promise(resolve => {
+            try {
+                let request;
+                request = GM_xmlhttpRequest({method, url, timeout:10000,
+                    onload:r => resolve({status:Number(r.status) || 0,
+                        challenge:/^cf-mitigated:\s*challenge\s*$/im.test(r.responseHeaders || '')}),
+                    onprogress:r => { if (r.loaded > 512 * 1024) { resolve({status:0}); request?.abort(); } },
+                    onerror:() => resolve({status:0}), ontimeout:() => resolve({status:0}),
+                    onabort:() => resolve({status:0})});
+            } catch (_) { resolve({status:0}); }
+        });
+    }
     async function diagnoseAudioFailure(media) {
         const file = currentSfFile;
         const serial = requestSerial;
         const notice = playbackNotice;
         if (!file || !notice || media !== audio) return;
-        const url = getStreamUrl(file);
         const now = Date.now();
-        if (now - (audioDiagnosticTimes.get(url) || 0) < 60000) return;
-        if (audioDiagnosticTimes.size >= 100) audioDiagnosticTimes.delete(audioDiagnosticTimes.keys().next().value);
-        audioDiagnosticTimes.set(url, now);
-        // HEAD never downloads the audio body. Unsupported HEAD is inconclusive.
-        const diagnostic = await new Promise(resolve => {
-            try {
-                GM_xmlhttpRequest({method:'HEAD', url, timeout:10000,
-                    onload:r => resolve({status:Number(r.status) || 0, challenge:/^cf-mitigated:\s*challenge\s*$/im.test(r.responseHeaders || '')}),
-                    onerror:() => resolve(0), ontimeout:() => resolve(0), onabort:() => resolve(0)});
-            } catch (_) { resolve(0); }
-        });
+        let cached = audioDiagnostics.get(file);
+        if (!cached || now - cached.time >= 60000) {
+            if (audioDiagnostics.size >= 100) audioDiagnostics.delete(audioDiagnostics.keys().next().value);
+            const promise = (async () => {
+                const stream = await requestAudioDiagnostic(getStreamUrl(file), 'HEAD');
+                if (stream.status === 404 || stream.status === 410) return stream;
+                // The download page can return a different status from the stream.
+                const page = await requestAudioDiagnostic(getDownloadUrl(file), 'GET');
+                if (page.status === 404 || page.status === 410) return {...page, sfPage:true};
+                if (page.challenge) return page;
+                if (stream.challenge) return stream;
+                if (stream.status >= 400 && ![405,501].includes(stream.status)) return stream;
+                if (page.status >= 400) return {...page, sfPage:true};
+                return {status:0};
+            })();
+            cached = {time:now, promise};
+            audioDiagnostics.set(file, cached);
+        }
+        const diagnostic = await cached.promise;
         if (serial !== requestSerial || file !== currentSfFile || media !== audio
             || playbackNotice !== notice || !media.error) return;
-        const status = diagnostic?.status || 0;
-        if (diagnostic?.challenge) showPlaybackNotice({challenge:true});
-        else if (status >= 400 && status <= 599 && ![405,501].includes(status)) {
-            showPlaybackNotice({httpStatus:status});
+        if (diagnostic.challenge) showPlaybackNotice({challenge:true});
+        else if (diagnostic.status >= 400 && diagnostic.status <= 599) {
+            showPlaybackNotice({httpStatus:diagnostic.status, sfPage:diagnostic.sfPage});
         }
     }
 
