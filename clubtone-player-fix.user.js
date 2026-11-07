@@ -1596,10 +1596,13 @@ darsreza@gmail.com
 
     let currentSourceUrl = null;
     let playbackNotice = null;
+    let playbackNoticeTimer = null;
     let noticePositionRestore = null;
     let soundfilesFailed = false;
 
     function hidePlaybackNotice() {
+        clearTimeout(playbackNoticeTimer);
+        playbackNoticeTimer = null;
         playbackNotice?.remove();
         playbackNotice = null;
         if (noticePositionRestore) {
@@ -1679,6 +1682,8 @@ darsreza@gmail.com
         if (diagnostic.challenge) showPlaybackNotice({challenge:true});
         else if (diagnostic.status >= 400 && diagnostic.status <= 599) {
             showPlaybackNotice({httpStatus:diagnostic.status, sfPage:diagnostic.sfPage});
+        } else {
+            showPlaybackNotice({mediaCode:media.error?.code});
         }
     }
 
@@ -1691,7 +1696,9 @@ darsreza@gmail.com
         box.dataset.kind = error?.code === 'WAVE' ? 'wave' : 'audio';
         box.style.cssText = 'position:fixed;bottom:80px;left:16px;z-index:2147483000;max-width:min(460px,90vw);padding:14px;background:#fff;color:#222;border:1px solid #888;border-radius:6px;font:14px/1.5 sans-serif;box-shadow:0 2px 12px #0003';
         const text = document.createElement('div');
-        text.textContent = playbackErrorText(error, !currentSfFile);
+        text.textContent = error?.diagnosing
+            ? 'Уточняем причину недоступности аудио'
+            : playbackErrorText(error, !currentSfFile);
         const link = document.createElement('a');
         link.textContent = currentSfFile ? 'Soundfiles' : 'Страница трека';
         link.href = currentSfFile ? getDownloadUrl(currentSfFile) : sameMirrorTrackUrl(getEntry(currentRow)?.href);
@@ -1743,6 +1750,16 @@ darsreza@gmail.com
             player.after(box);
         } else document.body.append(box);
         playbackNotice = box;
+        if (error?.diagnosing) {
+            const display = box.style.getPropertyValue('display');
+            box.style.setProperty('display', 'none', 'important');
+            playbackNoticeTimer = setTimeout(() => {
+                playbackNoticeTimer = null;
+                if (playbackNotice !== box) return;
+                if (display) box.style.setProperty('display', display);
+                else box.style.removeProperty('display');
+            }, 500);
+        }
     }
 
     const streamRecoveryTimes = new Map();
@@ -2035,7 +2052,8 @@ darsreza@gmail.com
             resetRowButton(button);
             if (button) button.title = 'Аудио недоступно — попытка отмечена в истории';
             playerPlay?.classList.remove('pt-playing');
-            showPlaybackNotice(error);
+            showPlaybackNotice(currentSfFile && audio?.error
+                ? {diagnosing:true} : error);
             // play() rejection can replace the notice created by the media error
             // event. Attach the same cached/in-flight diagnosis to this notice too.
             if (currentSfFile && audio?.error) void diagnoseAudioFailure(audio);
@@ -2704,7 +2722,7 @@ darsreza@gmail.com
                 stopProgressLoop();
                 soundfilesFailed = true;
                 trimAudioWarmCache(new Set());
-                showPlaybackNotice({mediaCode:media.error?.code});
+                showPlaybackNotice({mediaCode:media.error?.code, diagnosing:!!currentSfFile});
                 void diagnoseAudioFailure(media);
                 void recoverFailedStream(media);
                 warn(
