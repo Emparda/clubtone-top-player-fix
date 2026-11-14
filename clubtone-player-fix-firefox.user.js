@@ -4,7 +4,7 @@
 // @copyright    2026 Dmitriy Oshev
 // @license      LicenseRef-Clubtone-Personal-Use
 // @namespace    clubtone-player-fix
-// @version      1.0.3
+// @version      1.0.4
 // @homepageURL  https://github.com/Emparda/clubtone-top-player-fix
 // @supportURL   https://github.com/Emparda/clubtone-top-player-fix/issues
 // @updateURL    https://raw.githubusercontent.com/Emparda/clubtone-top-player-fix/refs/heads/main/clubtone-player-fix-firefox.user.js
@@ -57,7 +57,7 @@ darsreza@gmail.com
 (function () {
     'use strict';
 
-    const VERSION = '1.0.3';
+    const VERSION = '1.0.4';
 
     // Project attribution: Dmitriy Oshev; created with Codex GPT.
     // Creation date supplied by the author: 2026-10-02.
@@ -1610,7 +1610,7 @@ darsreza@gmail.com
 
     function playbackErrorText(error, page = false) {
         if (error?.code === 'WAVE') return 'Волна недоступна или ещё формируется на Soundfiles — аудио можно слушать';
-        if (error?.challenge === true) return 'Аудио недоступно — откройте Soundfiles, пройдите проверку и нажмите «Повторить»';
+        if (error?.challenge === true) return 'Аудио недоступно — откройте Soundfiles, подтвердите, что вы не робот, и нажмите «Повторить»';
         const message = String(error?.message || '');
         const status = Number(error?.httpStatus || message.match(/HTTP (\d{3})\b/)?.[1] || 0);
         const subject = page ? 'страницу трека' : 'аудио';
@@ -1618,7 +1618,7 @@ darsreza@gmail.com
         const label = status + (names[status] ? ' ' + names[status] : '');
         if (status === 404 && error?.sfPage) return 'Страница Soundfiles не найдена — ошибка 404 Not Found';
         if (status === 404) return page ? 'Страница трека не найдена — ошибка 404 Not Found' : 'Аудио недоступно — ошибка 404 Not Found';
-        if (status === 403) return 'Доступ к ' + (page ? 'странице трека' : 'аудио') + ' запрещён — ошибка 403 Forbidden';
+        if (status === 403) return page ? 'Доступ к странице трека запрещён — ошибка 403 Forbidden' : 'Доступ к аудио ограничен — откройте Soundfiles: возможно, нужно подтвердить, что вы не робот; затем нажмите «Повторить»';
         if (status === 429) return 'Слишком много запросов — ошибка 429 Too Many Requests; повторите попытку позже';
         if (status >= 500 && status <= 599) return 'Ошибка сервера — ' + label + '; повторите попытку позже';
         if (status >= 400 && status <= 599) return 'Не удалось загрузить ' + subject + ' — ошибка ' + label;
@@ -1641,6 +1641,14 @@ darsreza@gmail.com
         for (const cancel of [...activeAudioDiagnostics]) cancel();
         for (const [key, entry] of audioDiagnostics) if (!entry.done) audioDiagnostics.delete(key);
     }
+    function isAudioChallenge(response) {
+        if (/^cf-mitigated:\s*challenge\s*$/im.test(response.responseHeaders || '')) return true;
+        const html = String(response.responseText || '').slice(0, 512 * 1024);
+        // Require both the protection vendor and a challenge-page indicator.
+        // A regular 403, or a download page merely mentioning BitNinja, is not proof.
+        return /bitninja/i.test(html) && /(?:<title[^>]*>[^<]*(?:security|verification|challenge|captcha)|verify\s+(?:that\s+)?you(?:'re|\s+are)\s+(?:a\s+)?human|confirm\s+(?:that\s+)?you\s+are\s+not\s+a\s+robot|captcha|security\s+check)/i.test(html);
+    }
+
     function requestAudioDiagnostic(url, method) {
         return new Promise(resolve => {
             let request, settled = false;
@@ -1655,7 +1663,7 @@ darsreza@gmail.com
             try {
                 request = GM_xmlhttpRequest({method, url, timeout:10000,
                     onload:r => finish({status:Number(r.status) || 0,
-                        challenge:/^cf-mitigated:\s*challenge\s*$/im.test(r.responseHeaders || '')}),
+                        challenge:isAudioChallenge(r)}),
                     onprogress:r => { if (r.loaded > 512 * 1024) cancel(); },
                     onerror:() => finish({status:0}), ontimeout:() => finish({status:0}),
                     onabort:() => finish({status:0, cancelled:true})});
